@@ -1,0 +1,26 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Pending Requests: {{ campaign.name }}</h1>
+
+<div class="panel">
+    {% for item in requests %}
+        <div class="creature">
+            <div>
+                <strong>{{ item.user.username }}</strong>
+                {% if item.character %}- {{ item.character.name }} ({{ item.character.character_class }}){% endif %}
+                {% if item.request.message %}<br><em>"{{ item.request.message }}"</em>{% endif %}
+            </div>
+            <div>
+                <form method="post" action="/campaigns/{{ campaign.id }}/requests/{{ item.request.id }}/approve" style="display:inline">
+                    <input type="submit" value="approve">
+                </form>
+                <form method="post" action="/campaigns/{{ campaign.id }}/requests/{{ item.request.id }}/deny" style="display:inline">
+                    <input type="submit" value="deny">
+                </form>
+            </div>
+        </div>
+    {% else %}
+        <p>No pending requests.</p>
+    {% endfor %}
+</div>
+{% endblock %}

@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>{{ campaign.name }}{% if campaign.is_one_shot %} <span class="status">one-shot</span>{% endif %}</h1>
+<p>{{ campaign.description }}</p>
+{% if is_dm %}
+    <p><em>You are the DM.</em></p>
+    <p><a href="/campaigns/{{ campaign.id }}/requests">View join requests</a></p>
+{% endif %}
+
+<div class="panel">
+    <h2>Members</h2>
+    <ul>
+    {% for member, member_user in members %}
+        <li>{{ member_user.username }} - {{ member.role }}</li>
+    {% endfor %}
+    </ul>
+</div>
+{% endblock %}

@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>DND Table - DM View</title>
+    <style>
+        body {
+            font-family: monospace;
+            background: #1a1a1a;
+            color: #e0e0e0;
+            padding: 20px;
+            max-width: 1000px;
+            margin: 0 auto;
+        }
+        h1, h2 { color: #d4a017; }
+        .panel {
+            background: #2a2a2a;
+            border: 1px solid #444;
+            border-radius: 6px;
+            padding: 16px;
+            margin-bottom: 16px;
+        }
+        .creature {
+            display: flex;
+            justify-content: space-between;
+            padding: 8px;
+            border-bottom: 1px solid #333;
+        }
+        .creature:last-child { border-bottom: none; }
+        .hp-bar {
+            background: #333;
+            height: 12px;
+            width: 200px;
+            border-radius: 6px;
+            overflow: hidden;
+            margin-top: 4px;
+        }
+        .hp-fill {
+            background: #6a9956;
+            height: 100%;
+            transition: width 0.3s;
+        }
+        .hp-fill.low { background: #c08b3e; }
+        .hp-fill.critical { background: #b04848; }
+        button {
+            background: #d4a017;
+            color: #1a1a1a;
+            border: none;
+            padding: 8px 16px;
+            border-radius: 4px;
+            cursor: pointer;
+            font-family: monospace;
+            font-weight: bold;
+            margin-right: 8px;
+        }
+        button:hover { background: #e8b829; }
+        input {
+            background: #1a1a1a;
+            color: #e0e0e0;
+            border: 1px solid #444;
+            padding: 6px;
+            border-radius: 4px;
+            font-family: monospace;
+            margin-right: 8px;
+        }
+        .log {
+            background: #1a1a1a;
+            border: 1px solid #444;
+            border-radius: 4px;
+            padding: 12px;
+            height: 200px;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+        .log-entry { padding: 2px 0; }
+        .status {
+            display: inline-block;
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 11px;
+            background: #444;
+        }
+        .status.connected { background: #6a9956; }
+        .status.disconnected { background: #b04848; }
+    </style>
+</head>
+<body>
+    <h1>DND Table <span class="status" id="ws-status">connecting...</span></h1>
+
+    <div class="panel">
+        <h2>Add Player</h2>
+        <input id="player-name" placeholder="name" />
+        <input id="player-class" placeholder="class" value="fighter" />
+        <input id="player-hp" placeholder="hp" type="number" value="10" />
+        <button onclick="addPlayer()">Add</button>
+    </div>
+
+    <div class="panel">
+        <h2>Players</h2>
+        <div id="players"></div>
+    </div>
+
+    <div class="panel">
+        <h2>Enemies</h2>
+        <div id="enemies"></div>
+    </div>
+
+    <div class="panel">
+        <h2>Apply Damage</h2>
+        <input id="dmg-target" placeholder="target name" />
+        <input id="dmg-amount" placeholder="amount" type="number" />
+        <button onclick="applyDamage()">Hurt</button>
+    </div>
+
+    <div class="panel">
+        <h2>Event Log</h2>
+        <div class="log" id="log"></div>
+    </div>
+
+<script>
+const API = "http://localhost:8000";
+const WS = "ws://localhost:8000/ws";
+let ws;
+
+function connect() {
+    ws = new WebSocket(WS);
+    ws.onopen = () => {
+        document.getElementById("ws-status").textContent = "connected";
+        document.getElementById("ws-status").className = "status connected";
+        log("Connected to server");
+        refreshState();
+    };
+    ws.onclose = () => {
+        document.getElementById("ws-status").textContent = "disconnected";
+        document.getElementById("ws-status").className = "status disconnected";
+        setTimeout(connect, 2000);
+    };
+    ws.onmessage = (event) => {
+        const data = JSON.parse(event.data);
+        log(JSON.stringify(data));
+        refreshState();
+    };
+}
+
+function log(msg) {
+    const logDiv = document.getElementById("log");
+    const entry = document.createElement("div");
+    entry.className = "log-entry";
+    entry.textContent = `[${new Date().toLocaleTimeString()}] ${msg}`;
+    logDiv.appendChild(entry);
+    logDiv.scrollTop = logDiv.scrollHeight;
+}
+
+async function refreshState() {
+    const res = await fetch(`${API}/state`);
+    const state = await res.json();
+    renderCreatures("players", state.players);
+    renderCreatures("enemies", state.enemies);
+}
+
+function renderCreatures(elementId, creatures) {
+    const div = document.getElementById(elementId);
+    div.innerHTML = "";
+    for (const [name, c] of Object.entries(creatures)) {
+        const pct = (c.hp / c.max_hp) * 100;
+        const cls = pct < 25 ? "critical" : pct < 50 ? "low" : "";
+        div.innerHTML += `
+            <div class="creature">
+                <div>
+                    <div><strong>${name}</strong> (AC ${c.ac})</div>
+                    <div class="hp-bar"><div class="hp-fill ${cls}" style="width: ${pct}%"></div></div>
+                </div>
+                <div>${c.hp} / ${c.max_hp}</div>
+            </div>
+        `;
+    }
+}
+
+async function addPlayer() {
+    const name = document.getElementById("player-name").value;
+    const cls = document.getElementById("player-class").value;
+    const hp = document.getElementById("player-hp").value;
+    if (!name) return;
+    await fetch(`${API}/players?name=${name}&character_class=${cls}&max_hp=${hp}`, { method: "POST" });
+    document.getElementById("player-name").value = "";
+}
+
+async function applyDamage() {
+    const target = document.getElementById("dmg-target").value;
+    const amount = document.getElementById("dmg-amount").value;
+    if (!target || !amount) return;
+    await fetch(`${API}/damage?target=${target}&amount=${amount}`, { method: "POST" });
+    document.getElementById("dmg-target").value = "";
+    document.getElementById("dmg-amount").value = "";
+}
+
+connect();
+</script>
+</body>
+</html>

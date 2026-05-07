@@ -1,0 +1,24 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <title>{% block title %}DND Table{% endblock %}</title>
+    <style>
+        body { font-family: monospace; background: #1a1a1a; color: #e0e0e0; padding: 20px; max-width: 1000px; margin: 0 auto; }
+        h1, h2, h3 { color: #d4a017; }
+        a { color: #d4a017; }
+        .panel { background: #2a2a2a; border: 1px solid #444; border-radius: 6px; padding: 16px; margin-bottom: 16px; }
+        button, input[type="submit"] { background: #d4a017; color: #1a1a1a; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-family: monospace; font-weight: bold; }
+        input[type="text"], input[type="password"], input[type="number"], textarea { background: #1a1a1a; color: #e0e0e0; border: 1px solid #444; padding: 6px; border-radius: 4px; font-family: monospace; width: 100%; box-sizing: border-box; margin-bottom: 8px; }
+        label { display: block; margin-top: 8px; }
+        .error { color: #b04848; }
+        nav { margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #444; }
+    </style>
+</head>
+<body>
+    <nav>
+        <a href="/dashboard">dashboard</a> |
+        <a href="/logout">logout</a>
+    </nav>
+    {% block content %}{% endblock %}
+</body>
+</html>

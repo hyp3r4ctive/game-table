@@ -30,3 +30,6 @@ dist/
 .vscode/
 .idea/
 *.iml
+
+# Misc
+context.md

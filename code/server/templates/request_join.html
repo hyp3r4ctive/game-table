@@ -1,0 +1,18 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Request to join: {{ campaign.name }}</h1>
+<p>{{ campaign.description }}</p>
+
+<form method="post" action="/campaigns/{{ campaign.id }}/request">
+    <label>Character (optional)
+        <select name="character_id">
+            <option value="">No character yet</option>
+            {% for ch in characters %}
+                <option value="{{ ch.id }}">{{ ch.name }} ({{ ch.character_class }})</option>
+            {% endfor %}
+        </select>
+    </label>
+    <label>Message to DM <textarea name="message"></textarea></label>
+    <input type="submit" value="Send Request">
+</form>
+{% endblock %}

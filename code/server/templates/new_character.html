@@ -1,0 +1,11 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>New Character</h1>
+<form method="post" action="/characters/new">
+    <label>Name <input type="text" name="name" required></label>
+    <label>Class <input type="text" name="character_class"></label>
+    <label>Max HP <input type="number" name="max_hp" value="10"></label>
+    <label>Armor Class <input type="number" name="armor_class" value="10"></label>
+    <input type="submit" value="Create">
+</form>
+{% endblock %}
