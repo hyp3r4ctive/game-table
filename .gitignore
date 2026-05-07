@@ -1,0 +1,32 @@
+# SolidWorks backups and temp files
+*.bak
+*.SLDLFP~
+*~
+~$*
+*.tmp
+*.swp
+
+# OS files
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+venv/
+.env
+
+# Node
+node_modules/
+
+# Build outputs
+build/
+dist/
+*.exe
+
+# IDE
+.vscode/
+.idea/
+*.iml
