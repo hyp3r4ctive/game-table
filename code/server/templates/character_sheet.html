@@ -1,0 +1,195 @@
+{% extends "base.html" %}
+{% block content %}
+{% set c = character %}
+{% set hp_pct = (c.current_hp / c.max_hp * 100) if c.max_hp else 0 %}
+
+<style>
+  .sheet-grid { display: grid; grid-template-columns: 1fr 2fr; gap: 16px; }
+  .stat-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 12px 0; }
+  .stat-box { background: #1a1a1a; border: 1px solid #444; border-radius: 6px; padding: 8px; text-align: center; }
+  .stat-box .label { font-size: 0.75em; color: #999; text-transform: uppercase; }
+  .stat-box .score { font-size: 1.6em; color: #d4a017; font-weight: bold; }
+  .stat-box .mod { color: #ccc; }
+  .skill-table, .save-table { width: 100%; }
+  .skill-table td, .save-table td { padding: 3px 6px; border-bottom: 1px solid #333; }
+  .prof { color: #d4a017; }
+  .exp { color: #b08aff; font-weight: bold; }
+  .hp-bar { background: #1a1a1a; height: 16px; border-radius: 4px; overflow: hidden; border: 1px solid #444; }
+  .hp-fill { background: #4a8b4a; height: 100%; }
+  .hp-fill.low { background: #b04848; }
+  .meta { color: #888; font-size: 0.9em; }
+  .feat-card { background: #1a1a1a; border: 1px solid #333; border-radius: 4px; padding: 8px; margin-bottom: 6px; }
+  .conditions { color: #b0a0d0; }
+</style>
+
+<h1>{{ c.name }}</h1>
+<p class="meta">
+  {% if c.race %}{{ race_data.name if race_data else c.race }}{% if c.subrace %} ({{ c.subrace }}){% endif %} · {% endif %}
+  {% if c.character_class %}{{ class_data.name if class_data else c.character_class }}{% if c.subclass %} ({{ c.subclass }}){% endif %} · {% endif %}
+  level {{ c.level }}
+  {% if c.alignment %} · {{ c.alignment }}{% endif %}
+  {% if c.background %} · {{ background_data.name if background_data else c.background }}{% endif %}
+</p>
+<p>
+  <a href="/dashboard">dashboard</a>
+  {% if is_owner %} | <a href="/characters/{{ c.id }}/edit">edit</a>{% endif %}
+</p>
+
+<div class="panel">
+  <div class="row" style="display:flex; gap: 24px; align-items: center; flex-wrap: wrap">
+    <div><strong>HP</strong> {{ c.current_hp }} / {{ c.max_hp }}{% if c.temp_hp %} (+{{ c.temp_hp }}){% endif %}</div>
+    <div><strong>AC</strong> {{ c.armor_class }}</div>
+    <div><strong>speed</strong> {{ c.speed_ft }} ft</div>
+    <div><strong>init</strong> +{{ c.initiative_bonus + ability_modifier(c.dexterity) }}</div>
+    <div><strong>prof</strong> +{{ proficiency_bonus }}</div>
+    <div><strong>hit dice</strong> {{ c.level - c.hit_dice_used }}/{{ c.level }} {{ c.hit_die }}</div>
+    {% if c.inspiration %}<div style="color:#d4a017">★ inspired</div>{% endif %}
+  </div>
+  <div class="hp-bar" style="margin-top: 8px"><div class="hp-fill {% if hp_pct < 30 %}low{% endif %}" style="width: {{ hp_pct }}%"></div></div>
+</div>
+
+<div class="stat-grid">
+  {% for ab in abilities %}
+    {% set score = c[ab] %}
+    {% set mod = ability_modifier(score) %}
+    <div class="stat-box">
+      <div class="label">{{ ab[:3] }}</div>
+      <div class="score">{{ score }}</div>
+      <div class="mod">{{ "+%d"|format(mod) if mod >= 0 else "%d"|format(mod) }}</div>
+    </div>
+  {% endfor %}
+</div>
+
+<div class="sheet-grid">
+<div>
+
+<div class="panel">
+  <h3>saving throws</h3>
+  <table class="save-table">
+    {% for ab in abilities %}
+      {% set mod = ability_modifier(c[ab]) %}
+      {% set prof = ab in c.saving_throw_profs %}
+      {% set total = mod + (proficiency_bonus if prof else 0) %}
+      <tr>
+        <td style="width:18px">{% if prof %}<span class="prof">●</span>{% else %}○{% endif %}</td>
+        <td>{{ ab }}</td>
+        <td style="text-align:right">{{ "+%d"|format(total) if total >= 0 else "%d"|format(total) }}</td>
+      </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="panel">
+  <h3>skills</h3>
+  <table class="skill-table">
+    {% for skill, ab in skills.items() %}
+      {% set mod = ability_modifier(c[ab]) %}
+      {% set prof = skill in c.skill_profs %}
+      {% set exp = skill in c.skill_expertises %}
+      {% set bonus = (proficiency_bonus * 2) if exp else (proficiency_bonus if prof else 0) %}
+      {% set total = mod + bonus %}
+      <tr>
+        <td style="width:18px">{% if exp %}<span class="exp">◆</span>{% elif prof %}<span class="prof">●</span>{% else %}○{% endif %}</td>
+        <td>{{ skill }} <span class="meta">({{ ab[:3] }})</span></td>
+        <td style="text-align:right">{{ "+%d"|format(total) if total >= 0 else "%d"|format(total) }}</td>
+      </tr>
+    {% endfor %}
+  </table>
+</div>
+
+<div class="panel">
+  <h3>languages</h3>
+  <p>{{ c.languages | join(', ') if c.languages else '—' }}</p>
+</div>
+
+<div class="panel">
+  <h3>money</h3>
+  <p>
+    {% for coin in ['cp', 'sp', 'ep', 'gp', 'pp'] %}
+      {% set v = c.money[coin] if c.money and coin in c.money else 0 %}
+      {{ v }} {{ coin }}{% if not loop.last %} · {% endif %}
+    {% endfor %}
+  </p>
+</div>
+
+</div>
+<div>
+
+{% if c.spell_slots_max %}
+<div class="panel">
+  <h3>spells</h3>
+  {% if c.spellcasting_ability %}
+    <p class="meta">spellcasting ability: {{ c.spellcasting_ability }} ·
+      attack: +{{ ability_modifier(c[c.spellcasting_ability]) + proficiency_bonus }} ·
+      save DC: {{ 8 + ability_modifier(c[c.spellcasting_ability]) + proficiency_bonus }}
+    </p>
+  {% endif %}
+  <p><strong>slots:</strong>
+    {% for lvl in range(1, 10) %}
+      {% set max_v = c.spell_slots_max.get(lvl|string, 0) %}
+      {% set used_v = c.spell_slots_used.get(lvl|string, 0) %}
+      {% if max_v %}
+        L{{ lvl }}: {{ max_v - used_v }}/{{ max_v }}{% if not loop.last %} · {% endif %}
+      {% endif %}
+    {% endfor %}
+  </p>
+  {% if c.spells_known %}
+    <p><strong>known:</strong> {{ c.spells_known | join(', ') }}</p>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="panel">
+  <h3>features &amp; traits</h3>
+  {% if race_data and race_data.traits %}
+    {% for t in race_data.traits %}
+      <div class="feat-card"><strong>{{ t.name }}</strong> <span class="meta">(racial)</span><br><span class="meta">{{ t.description }}</span></div>
+    {% endfor %}
+  {% endif %}
+  {% if class_data %}
+    {% for lvl_str, feats in (class_data.features_by_level or {}).items() %}
+      {% if lvl_str|int <= c.level %}
+        {% for f in feats %}
+          <div class="feat-card"><strong>{{ f.name }}</strong> <span class="meta">({{ class_data.name }} L{{ lvl_str }})</span><br><span class="meta">{{ f.description }}</span></div>
+        {% endfor %}
+      {% endif %}
+    {% endfor %}
+  {% endif %}
+  {% if background_data and background_data.feature %}
+    <div class="feat-card"><strong>{{ background_data.feature.name }}</strong> <span class="meta">(background)</span><br><span class="meta">{{ background_data.feature.description }}</span></div>
+  {% endif %}
+  {% for f in c.features %}
+    <div class="feat-card"><strong>{{ f.name }}</strong>{% if f.description %}<br><span class="meta">{{ f.description }}</span>{% endif %}</div>
+  {% endfor %}
+</div>
+
+<div class="panel">
+  <h3>equipment</h3>
+  {% if c.equipment %}
+    <ul>{% for item in c.equipment %}<li>{{ item.name }}</li>{% endfor %}</ul>
+  {% else %}
+    <p class="meta">—</p>
+  {% endif %}
+</div>
+
+{% if c.personality_traits or c.ideals or c.bonds or c.flaws or c.backstory %}
+<div class="panel">
+  <h3>personality</h3>
+  {% if c.personality_traits %}<p><strong>traits.</strong> {{ c.personality_traits }}</p>{% endif %}
+  {% if c.ideals %}<p><strong>ideals.</strong> {{ c.ideals }}</p>{% endif %}
+  {% if c.bonds %}<p><strong>bonds.</strong> {{ c.bonds }}</p>{% endif %}
+  {% if c.flaws %}<p><strong>flaws.</strong> {{ c.flaws }}</p>{% endif %}
+  {% if c.backstory %}<p><strong>backstory.</strong> {{ c.backstory }}</p>{% endif %}
+</div>
+{% endif %}
+
+{% if c.notes %}
+<div class="panel">
+  <h3>notes</h3>
+  <p>{{ c.notes }}</p>
+</div>
+{% endif %}
+
+</div>
+</div>
+{% endblock %}

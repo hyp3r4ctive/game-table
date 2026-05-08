@@ -1,0 +1,781 @@
+{% extends "base.html" %}
+{% block body_class %}wide{% endblock %}
+{% block content %}
+{% set damage_types = ['slashing','piercing','bludgeoning','acid','cold','fire','force','lightning','necrotic','poison','psychic','radiant','thunder'] %}
+<style>
+  .session-grid { display: grid; grid-template-columns: 2.2fr 1fr; gap: 14px; }
+  .live-card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 8px;
+    transition: border-color 0.15s;
+  }
+  .live-card.enemy { border-left: 3px solid var(--danger); }
+  .live-card:not(.enemy) { border-left: 3px solid var(--teal); }
+  .live-card.current { border-color: var(--teal-bright); box-shadow: 0 0 0 1px var(--teal-bright); }
+  .live-card.dead { opacity: 0.45; }
+  .hp-bar { background: #0f1316; height: 9px; border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
+  .hp-fill { background: var(--teal); height: 100%; transition: width 0.3s; }
+  .hp-fill.low { background: var(--danger); }
+  .conditions { color: #b0a0d0; font-size: 0.85em; }
+  .log { max-height: 420px; overflow-y: auto; font-size: 0.88em; }
+  .log-entry { padding: 5px 0; border-bottom: 1px solid var(--border); }
+  .log-time { color: var(--text-faint); font-size: 0.78em; margin-right: 6px; }
+  details summary { cursor: pointer; color: var(--teal-bright); padding: 6px 0; user-select: none; font-size: 0.9em; }
+  details summary:hover { color: var(--teal); }
+  .inline-form { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+  .inline-form input, .inline-form select { margin-bottom: 0; }
+  .inline-form input[type="number"] { width: 60px; }
+  .inline-form input[type="text"] { width: 110px; }
+  .inline-form select { width: auto; }
+  .inline-form label { margin-top: 0; color: var(--text-faint); font-size: 0.82em; }
+  .meta { color: var(--text-faint); font-size: 0.85em; }
+  .turn-indicator { color: var(--teal-bright); font-weight: 600; }
+  ol.init-list { padding-left: 24px; }
+  ol.init-list li { padding: 3px 0; color: var(--text-dim); }
+  ol.init-list li.current { color: var(--teal-bright); font-weight: 600; }
+  .seat-row { display: grid; grid-template-columns: 60px 1fr; gap: 8px; padding: 4px 0; font-size: 0.9em; }
+  .seat-row .seat-num { color: var(--text-faint); font-family: monospace; }
+</style>
+
+<h1>{{ campaign.name }} <span class="pill teal">live</span></h1>
+<p class="meta">
+  <a href="/campaigns/{{ campaign.id }}">back to campaign</a> ·
+  <a href="/projector/{{ gs.id }}" target="_blank">open projector view ↗</a>
+  {% if gs.in_combat %} · <span class="pill warn">round {{ gs.round_number }}</span> current: <span class="turn-indicator">{{ current_name }}</span>{% endif %}
+  {% if gs.pushed_to_table %} · <span class="pill teal">on table</span>{% endif %}
+</p>
+
+{% if is_dm %}
+<div class="panel">
+  <h2 style="display:inline-block">Battle Map</h2>
+  <form method="post" action="/sessions/{{ gs.id }}/set-map" class="inline-form" style="display:inline-flex; margin-left:12px">
+    <select name="map_id">
+      {% for m in campaign_maps %}<option value="{{ m.id }}" {% if active_map and m.id == active_map.id %}selected{% endif %}>{{ m.name }} ({{ m.grid_cols }}×{{ m.grid_rows }})</option>{% endfor %}
+    </select>
+    <button type="submit" class="small">load map</button>
+  </form>
+  <a href="/campaigns/{{ campaign.id }}/maps" class="meta">manage maps</a>
+
+  {% if active_map %}
+    <div id="map-tools" class="row" style="margin: 10px 0; gap: 6px; align-items:center">
+      <span class="meta">tool:</span>
+      <button type="button" class="small" data-tool="move">move</button>
+      <button type="button" class="small secondary" data-tool="wall">wall</button>
+      <button type="button" class="small secondary" data-tool="zone">zone</button>
+      <select id="zone-type" style="width:auto; margin:0">
+        <option value="bright">bright light</option>
+        <option value="dim">dim light</option>
+        <option value="dark">darkness</option>
+        <option value="magical_dark">magical dark</option>
+        <option value="difficult">difficult terrain</option>
+        <option value="water">water</option>
+      </select>
+      <select id="zone-shape" style="width:auto; margin:0">
+        <option value="rect">rectangle</option>
+        <option value="circle">circle</option>
+      </select>
+      <button type="button" class="small secondary" data-tool="draw">draw</button>
+      <input type="color" id="draw-color" value="#3ab5a6" style="width:36px; height:28px; padding:0; margin:0">
+      <button type="button" class="small secondary" data-tool="erase">erase</button>
+      <span style="flex:1"></span>
+      <button type="button" class="small secondary" id="reveal-all-btn">reveal all</button>
+      <button type="button" class="small secondary" id="clear-fog-btn">forget</button>
+      <button type="button" class="small secondary" id="clear-walls-btn">clear walls</button>
+      <button type="button" class="small secondary" id="clear-zones-btn">clear zones</button>
+      <button type="button" class="small secondary" id="clear-draw-btn">clear drawings</button>
+    </div>
+
+    <div id="map-container" data-map-id="{{ active_map.id }}" data-cols="{{ active_map.grid_cols }}" data-rows="{{ active_map.grid_rows }}" data-image="{{ active_map.image_path or '' }}"
+         style="position:relative; max-width:100%; overflow:auto; background:#0c1115; border:1px solid var(--border); border-radius:8px; user-select:none">
+    </div>
+    <p class="meta">move = drag tokens · wall = drag to draw line segments (block sight) · zone = drag corner-to-corner to mark light/terrain · erase = click on a wall or zone to remove</p>
+  {% else %}
+    <p class="meta">no map loaded. <a href="/campaigns/{{ campaign.id }}/maps">create or pick one →</a></p>
+  {% endif %}
+</div>
+{% endif %}
+
+<div class="session-grid">
+<div>
+
+<div class="panel">
+  <h2>Combat</h2>
+  {% if is_dm %}
+    {% if not gs.in_combat %}
+      <form method="post" action="/sessions/{{ gs.id }}/combat/start" style="display:inline">
+        <button type="submit">start combat (auto-roll initiative)</button>
+      </form>
+    {% else %}
+      <form method="post" action="/sessions/{{ gs.id }}/combat/next-turn" style="display:inline">
+        <button type="submit">next turn</button>
+      </form>
+      <form method="post" action="/sessions/{{ gs.id }}/combat/end" style="display:inline">
+        <button type="submit" class="secondary">end combat</button>
+      </form>
+    {% endif %}
+  {% endif %}
+  {% if gs.in_combat %}
+    <ol class="init-list">
+      {% for entry in gs.initiative_order %}
+        <li class="{% if loop.index0 == gs.current_turn_index %}current{% endif %}">
+          {{ entry.name }} <span class="meta">({{ entry.init }})</span>
+        </li>
+      {% endfor %}
+    </ol>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h2>Characters</h2>
+  {% for lc in live_characters %}
+    {% set hp_pct = (lc.current_hp / lc.max_hp * 100) if lc.max_hp else 0 %}
+    {% set obscure = lc.is_enemy and not is_dm %}
+    {% set status = "healthy" %}
+    {% if lc.current_hp <= 0 %}{% set status = "down" %}
+    {% elif hp_pct < 25 %}{% set status = "near death" %}
+    {% elif hp_pct < 50 %}{% set status = "bloodied" %}
+    {% elif hp_pct < 90 %}{% set status = "wounded" %}
+    {% endif %}
+    <div class="live-card {% if lc.is_enemy %}enemy{% endif %} {% if lc.name == current_name %}current{% endif %} {% if lc.current_hp <= 0 %}dead{% endif %}">
+      <div class="row" style="justify-content: space-between">
+        <div>
+          <strong>{{ lc.name }}</strong>
+          <span class="meta">{% if lc.is_enemy %}enemy{% else %}{{ lc.character_class or "PC" }} L{{ lc.level }}{% endif %}{% if not obscure %} · AC {{ lc.armor_class }}{% endif %}</span>
+        </div>
+        {% if lc.name == current_name %}<span class="pill teal">turn</span>{% endif %}
+      </div>
+      {% if obscure %}
+        <div class="row" style="margin-top:6px"><span class="pill {% if status == 'down' %}danger{% elif status in ['bloodied','near death'] %}warn{% endif %}">{{ status }}</span>
+        {% if lc.conditions %}
+          <span class="conditions">{% for c in lc.conditions %}{{ c.name }}{% if not loop.last %}, {% endif %}{% endfor %}</span>
+        {% endif %}
+        </div>
+      {% else %}
+        <div class="hp-bar" style="margin: 6px 0"><div class="hp-fill {% if hp_pct < 30 %}low{% endif %}" style="width: {{ hp_pct }}%"></div></div>
+        <div class="row">
+          <span>HP {{ lc.current_hp }} / {{ lc.max_hp }}{% if lc.temp_hp %} (+{{ lc.temp_hp }} temp){% endif %}</span>
+          {% if lc.conditions %}
+            <span class="conditions">{% for c in lc.conditions %}{{ c.name }}{% if not loop.last %}, {% endif %}{% endfor %}</span>
+          {% endif %}
+        </div>
+      {% endif %}
+
+      {% if is_dm %}
+      <details>
+        <summary>actions</summary>
+
+        <form method="post" action="/sessions/{{ gs.id }}/damage" class="inline-form">
+          <input type="hidden" name="target_id" value="{{ lc.id }}">
+          <label>damage</label>
+          <input type="number" name="amount" value="0">
+          <select name="damage_type">
+            {% for dt in damage_types %}<option value="{{ dt }}">{{ dt }}</option>{% endfor %}
+          </select>
+          <button type="submit" class="small">apply</button>
+        </form>
+
+        <form method="post" action="/sessions/{{ gs.id }}/heal" class="inline-form">
+          <input type="hidden" name="target_id" value="{{ lc.id }}">
+          <label>heal</label>
+          <input type="number" name="amount" value="0">
+          <button type="submit" class="small">apply</button>
+        </form>
+
+        <form method="post" action="/sessions/{{ gs.id }}/save" class="inline-form">
+          <input type="hidden" name="target_id" value="{{ lc.id }}">
+          <label>save</label>
+          <select name="ability">
+            <option>strength</option><option>dexterity</option><option>constitution</option>
+            <option>intelligence</option><option>wisdom</option><option>charisma</option>
+          </select>
+          <label>mod</label><input type="number" name="save_modifier" value="0">
+          <label>DC</label><input type="number" name="dc" value="13">
+          <button type="submit" class="small">roll</button>
+        </form>
+
+        <form method="post" action="/sessions/{{ gs.id }}/conditions/add" class="inline-form">
+          <input type="hidden" name="target_id" value="{{ lc.id }}">
+          <label>condition</label>
+          <select name="condition_name">
+            {% for c in conditions %}<option value="{{ c.key }}">{{ c.name }}</option>{% endfor %}
+          </select>
+          <label>rounds</label><input type="number" name="duration_rounds">
+          <button type="submit" class="small">apply</button>
+        </form>
+
+        {% if lc.conditions %}
+        <form method="post" action="/sessions/{{ gs.id }}/conditions/remove" class="inline-form">
+          <input type="hidden" name="target_id" value="{{ lc.id }}">
+          <label>remove</label>
+          <select name="condition_name">
+            {% for c in lc.conditions %}<option value="{{ c.name }}">{{ c.name }}</option>{% endfor %}
+          </select>
+          <button type="submit" class="small secondary">remove</button>
+        </form>
+        {% endif %}
+
+        <form method="post" action="/sessions/{{ gs.id }}/attack" class="inline-form">
+          <input type="hidden" name="attacker_id" value="{{ lc.id }}">
+          <label>attack</label>
+          <select name="target_id">
+            {% for t in live_characters %}{% if t.id != lc.id %}<option value="{{ t.id }}">{{ t.name }}</option>{% endif %}{% endfor %}
+          </select>
+          <label>+hit</label><input type="number" name="to_hit_modifier" value="3">
+          <span class="meta">dmg:</span>
+          {% with form_id='atk-' ~ lc.id, expression_name='damage_dice' %}{% include "_dice_picker.html" %}{% endwith %}
+          <select name="damage_type">
+            {% for dt in damage_types %}<option value="{{ dt }}">{{ dt }}</option>{% endfor %}
+          </select>
+          <button type="submit" class="small">attack</button>
+        </form>
+
+        {% if not lc.is_enemy %}
+        <form method="post" action="/sessions/{{ gs.id }}/cast" class="inline-form">
+          <input type="hidden" name="caster_id" value="{{ lc.id }}">
+          <label>cast</label>
+          <select name="spell_name">
+            {% for s in spells %}<option value="{{ s.key }}">L{{ s.level }} {{ s.name }}</option>{% endfor %}
+          </select>
+          <label>slot</label><input type="number" name="slot_level" value="1" style="width:50px">
+          <label>target</label>
+          <select name="target_ids">
+            <option value="">—</option>
+            {% for t in live_characters %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+          </select>
+          <label>DC</label><input type="number" name="spell_save_dc" value="13" style="width:50px">
+          <label>+atk</label><input type="number" name="spell_attack_modifier" value="5" style="width:50px">
+          <label>+mod</label><input type="number" name="spellcasting_modifier" value="3" style="width:50px">
+          <button type="submit" class="small">cast</button>
+        </form>
+        <div class="meta">slots: {% for k, v in lc.spell_slots.items() %}L{{k}}:{{v}} {% endfor %}</div>
+        {% endif %}
+      </details>
+      {% endif %}
+    </div>
+  {% endfor %}
+</div>
+
+{% if is_dm %}
+<div class="panel">
+  <h3>Table</h3>
+  {% if gs.pushed_to_table %}
+    <p class="meta">session is live on the table.</p>
+    <div>
+      {% for seat in [1,2,3,4,5,6] %}
+        <div class="seat-row">
+          <span class="seat-num">seat {{ seat }}</span>
+          <span>{% set claimed_id = gs.seat_assignments.get(seat|string) %}{% if claimed_id %}{% for lc in live_characters %}{% if lc.id == claimed_id %}{{ lc.name }}{% endif %}{% endfor %}{% else %}<span class="meta">open</span>{% endif %}</span>
+        </div>
+      {% endfor %}
+    </div>
+    <form method="post" action="/sessions/{{ gs.id }}/unpush" style="margin-top:8px">
+      <button type="submit" class="secondary">pull from table</button>
+    </form>
+  {% else %}
+    <form method="post" action="/sessions/{{ gs.id }}/push">
+      <button type="submit">push session to table</button>
+    </form>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h3>Spawn enemy</h3>
+  <form method="post" action="/sessions/{{ gs.id }}/spawn-enemy" class="inline-form">
+    <input type="text" name="name" placeholder="goblin" required style="width:120px">
+    <label>HP</label><input type="number" name="max_hp" value="10">
+    <label>AC</label><input type="number" name="armor_class" value="13">
+    <label>DEX</label><input type="number" name="dexterity" value="14">
+    <button type="submit">spawn</button>
+  </form>
+</div>
+
+<div class="panel">
+  <h3>Session</h3>
+  <form method="post" action="/sessions/{{ gs.id }}/end" onsubmit="return confirm('End this session? Live state will be discarded.');">
+    <button type="submit" class="danger">end session</button>
+  </form>
+</div>
+{% endif %}
+
+</div>
+<div>
+
+<div class="panel">
+  <h2>Dice</h2>
+  <form method="post" action="/sessions/{{ gs.id }}/dice/roll">
+    {% with form_id='global-dice', expression_name='expression' %}{% include "_dice_picker.html" %}{% endwith %}
+    <div class="row" style="margin-top:8px">
+      <label style="margin:0"><input type="checkbox" name="advantage" value="true"> adv</label>
+      <label style="margin:0"><input type="checkbox" name="disadvantage" value="true"> dis</label>
+      <button type="submit" class="small">roll</button>
+    </div>
+  </form>
+</div>
+
+<div class="panel">
+  <h2>Log</h2>
+  <div class="log">
+    {% for entry in gs.event_log %}
+      <div class="log-entry">
+        <span class="log-time">{{ entry.t.split('T')[1] if 'T' in entry.t else entry.t }}</span>
+        {{ entry.msg }}
+      </div>
+    {% else %}
+      <p class="meta">no events yet.</p>
+    {% endfor %}
+  </div>
+</div>
+
+</div>
+</div>
+
+{% if is_dm and active_map %}
+<script>
+(function() {
+  const SESSION_ID = {{ gs.id }};
+  const container = document.getElementById('map-container');
+  if (!container) return;
+
+  const COLS = parseInt(container.dataset.cols);
+  const ROWS = parseInt(container.dataset.rows);
+  const IMAGE_SRC = container.dataset.image;
+  let SQUARE_PX = 16;
+  let dispW = 0, dispH = 0;
+  let currentTool = 'move';
+  let lastState = null;
+  let dragToken = null;
+  let dragOffset = {x: 0, y: 0};
+  let drawing = null;
+  let dragShape = null;  // {type:'wall'|'zone', startX, startY, currentX, currentY}
+
+  const ZONE_COLORS = {
+    bright: 'rgba(255,236,170,0.18)',
+    dim: 'rgba(120,140,180,0.25)',
+    dark: 'rgba(0,0,0,0.4)',
+    magical_dark: 'rgba(120,40,180,0.45)',
+    difficult: 'rgba(160,110,60,0.3)',
+    water: 'rgba(60,140,200,0.35)',
+  };
+  const ZONE_BORDER = {
+    bright: '#d4c270', dim: '#7a8aa0', dark: '#222',
+    magical_dark: '#a040d0', difficult: '#8a6a3a', water: '#4090c0',
+  };
+
+  // Tool buttons
+  document.querySelectorAll('#map-tools button[data-tool]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentTool = btn.dataset.tool;
+      document.querySelectorAll('#map-tools button[data-tool]').forEach(b => {
+        b.classList.toggle('secondary', b.dataset.tool !== currentTool);
+      });
+    });
+  });
+  // Set initial active style
+  document.querySelector('#map-tools button[data-tool="move"]').classList.remove('secondary');
+
+  function postJSON(url, body) {
+    return fetch(url, {method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  }
+  document.getElementById('reveal-all-btn').addEventListener('click', () => postJSON(`/sessions/${SESSION_ID}/fog`, {action: 'reveal_all'}));
+  document.getElementById('clear-fog-btn').addEventListener('click', () => postJSON(`/sessions/${SESSION_ID}/fog`, {action: 'clear'}));
+  document.getElementById('clear-draw-btn').addEventListener('click', () => postJSON(`/sessions/${SESSION_ID}/draw`, {action: 'clear'}));
+  document.getElementById('clear-walls-btn').addEventListener('click', () => postJSON(`/sessions/${SESSION_ID}/walls`, {action: 'clear'}));
+  document.getElementById('clear-zones-btn').addEventListener('click', () => postJSON(`/sessions/${SESSION_ID}/zones`, {action: 'clear'}));
+
+  function build(state) {
+    container.innerHTML = '';
+    // Use viewport-based sizing so we don't depend on parent layout being final.
+    // Body padding 20 each side + panel padding 16 each side = 72 reserved horizontally.
+    const availW = Math.max(400, window.innerWidth - 72);
+    const availH = Math.max(400, Math.min(window.innerHeight * 0.78, 1000));
+    SQUARE_PX = Math.max(10, Math.min(availW / COLS, availH / ROWS));
+    dispW = Math.round(COLS * SQUARE_PX);
+    dispH = Math.round(ROWS * SQUARE_PX);
+    if (IMAGE_SRC) {
+      const img = new Image();
+      img.onload = () => layout(state, img.src);
+      img.onerror = () => layout(state, null);
+      img.src = IMAGE_SRC;
+    } else {
+      layout(state, null);
+    }
+  }
+
+  function layout(state, imgSrc) {
+    container.style.width = dispW + 'px';
+    container.style.height = dispH + 'px';
+    container.style.position = 'relative';
+    container.style.background = '#0c1115';
+    if (imgSrc) {
+      const im = document.createElement('img');
+      im.src = imgSrc;
+      im.style.width = dispW + 'px';
+      im.style.height = dispH + 'px';
+      im.style.display = 'block';
+      im.draggable = false;
+      im.style.position = 'absolute'; im.style.top='0'; im.style.left='0';
+      container.appendChild(im);
+    }
+    function makeCanvas(id) {
+      const c = document.createElement('canvas');
+      c.id = id; c.width = dispW; c.height = dispH;
+      c.style.position = 'absolute'; c.style.top = '0'; c.style.left = '0';
+      container.appendChild(c);
+      return c;
+    }
+    makeCanvas('zone-canvas');
+    makeCanvas('fog-canvas');
+    makeCanvas('wall-canvas');
+    makeCanvas('draw-canvas');
+    makeCanvas('grid-canvas');
+    makeCanvas('preview-canvas');
+
+    const tokenLayer = document.createElement('div');
+    tokenLayer.id = 'token-layer';
+    Object.assign(tokenLayer.style, {position:'absolute', top:'0', left:'0', width:dispW+'px', height:dispH+'px'});
+    container.appendChild(tokenLayer);
+
+    const interact = document.createElement('div');
+    interact.id = 'interact-layer';
+    Object.assign(interact.style, {position:'absolute', top:'0', left:'0', width:dispW+'px', height:dispH+'px', cursor:'crosshair'});
+    container.appendChild(interact);
+
+    interact.addEventListener('mousedown', onInteractDown);
+    interact.addEventListener('mousemove', onInteractMove);
+    window.addEventListener('mouseup', onInteractUp);
+
+    renderAll(state);
+  }
+
+  function renderAll(state) {
+    drawZones(document.getElementById('zone-canvas'), state);
+    drawFogDM(document.getElementById('fog-canvas'), state);
+    drawWalls(document.getElementById('wall-canvas'), state);
+    drawStrokes(document.getElementById('draw-canvas'), state);
+    drawGrid(document.getElementById('grid-canvas'), state);
+    renderTokens(document.getElementById('token-layer'), state);
+  }
+
+  function drawGrid(canvas, state) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,dispW,dispH);
+    ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+    ctx.lineWidth = 1;
+    if ((state?.map?.grid_type || 'square') === 'hex') {
+      const size = SQUARE_PX / 2;
+      const hexW = Math.sqrt(3) * size;
+      const vSpacing = SQUARE_PX * 0.75;
+      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        const cx = c * hexW + hexW/2 + (r % 2) * hexW/2;
+        const cy = r * vSpacing + size;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = Math.PI/2 + i * Math.PI/3;
+          const px = cx + size * Math.cos(a);
+          const py = cy + size * Math.sin(a);
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.closePath(); ctx.stroke();
+      }
+    } else {
+      for (let x = 0; x <= COLS; x++) { ctx.beginPath(); ctx.moveTo(x*SQUARE_PX, 0); ctx.lineTo(x*SQUARE_PX, ROWS*SQUARE_PX); ctx.stroke(); }
+      for (let y = 0; y <= ROWS; y++) { ctx.beginPath(); ctx.moveTo(0, y*SQUARE_PX); ctx.lineTo(COLS*SQUARE_PX, y*SQUARE_PX); ctx.stroke(); }
+    }
+  }
+
+  function drawFogDM(canvas, state) {
+    // DM sees everything; show explored fog as dim translucent overlay (so DM can see what's revealed)
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,dispW,dispH);
+    const revealed = new Set((state.fog_revealed || []).map(([x,y]) => `${x},${y}`));
+    if ((state.fog_revealed || []).length === 0) return;
+    ctx.fillStyle = 'rgba(0,0,0,0.30)';
+    for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+      if (!revealed.has(`${x},${y}`)) ctx.fillRect(x*SQUARE_PX, y*SQUARE_PX, SQUARE_PX, SQUARE_PX);
+    }
+  }
+
+  function drawZones(canvas, state) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,dispW,dispH);
+    const zones = state.map?.zones || [];
+    for (const z of zones) {
+      ctx.fillStyle = ZONE_COLORS[z.type] || 'rgba(255,255,255,0.05)';
+      ctx.strokeStyle = ZONE_BORDER[z.type] || '#888';
+      ctx.lineWidth = 1.5;
+      if (z.shape === 'circle') {
+        ctx.beginPath();
+        ctx.arc(z.cx*SQUARE_PX, z.cy*SQUARE_PX, z.r*SQUARE_PX, 0, Math.PI*2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = ZONE_BORDER[z.type] || '#aaa';
+        ctx.font = `${Math.max(8, SQUARE_PX*0.5)}px Inter, sans-serif`;
+        ctx.fillText(z.type, (z.cx - z.r)*SQUARE_PX + 4, (z.cy - z.r)*SQUARE_PX + 12);
+      } else {
+        ctx.fillRect(z.x*SQUARE_PX, z.y*SQUARE_PX, z.w*SQUARE_PX, z.h*SQUARE_PX);
+        ctx.strokeRect(z.x*SQUARE_PX, z.y*SQUARE_PX, z.w*SQUARE_PX, z.h*SQUARE_PX);
+        ctx.fillStyle = ZONE_BORDER[z.type] || '#aaa';
+        ctx.font = `${Math.max(8, SQUARE_PX*0.5)}px Inter, sans-serif`;
+        ctx.fillText(z.type, z.x*SQUARE_PX+3, z.y*SQUARE_PX+12);
+      }
+    }
+  }
+
+  function drawWalls(canvas, state) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,dispW,dispH);
+    const walls = state.map?.walls || [];
+    ctx.strokeStyle = '#ff4d4d';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    for (const w of walls) {
+      ctx.beginPath();
+      ctx.moveTo(w.x1*SQUARE_PX, w.y1*SQUARE_PX);
+      ctx.lineTo(w.x2*SQUARE_PX, w.y2*SQUARE_PX);
+      ctx.stroke();
+    }
+  }
+
+  function drawStrokes(canvas, state) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,dispW,dispH);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (const stroke of (state.drawings || [])) {
+      ctx.strokeStyle = stroke.color || '#3ab5a6';
+      ctx.lineWidth = stroke.width || 3;
+      ctx.beginPath();
+      const pts = stroke.points || [];
+      for (let i = 0; i < pts.length; i++) {
+        const xx = pts[i][0] * SQUARE_PX;
+        const yy = pts[i][1] * SQUARE_PX;
+        if (i === 0) ctx.moveTo(xx, yy); else ctx.lineTo(xx, yy);
+      }
+      ctx.stroke();
+    }
+  }
+
+  function renderTokens(layer, state) {
+    layer.innerHTML = '';
+    for (const lc of state.live_characters) {
+      if (lc.x === null || lc.x === undefined || lc.y === null || lc.y === undefined) continue;
+      const t = document.createElement('div');
+      t.className = 'token ' + (lc.is_enemy ? 'enemy' : 'pc') + (lc.is_current ? ' current' : '');
+      t.dataset.lcId = lc.id;
+      const size = Math.max(20, SQUARE_PX * 0.85);
+      t.style.cssText = `position:absolute;display:flex;align-items:center;justify-content:center;border-radius:50%;color:#fff;font-weight:700;font-size:0.85em;pointer-events:auto;cursor:grab;width:${size}px;height:${size}px;left:${lc.x*SQUARE_PX + (SQUARE_PX-size)/2}px;top:${lc.y*SQUARE_PX + (SQUARE_PX-size)/2}px;background:${lc.is_enemy?'#c45a5a':'#2a9d8f'};box-shadow:0 0 0 2px rgba(0,0,0,0.6)${lc.is_current?',0 0 0 3px #ffd86b':''};${lc.current_hp !== undefined && lc.current_hp <= 0 ? 'opacity:0.4;filter:grayscale(1);' : ''}`;
+      t.title = lc.name + (lc.current_hp !== undefined ? ` (${lc.current_hp}/${lc.max_hp})` : '');
+      t.textContent = lc.name.slice(0,2).toUpperCase();
+      t.addEventListener('mousedown', e => {
+        if (currentTool !== 'move') return;
+        e.stopPropagation();
+        e.preventDefault();
+        dragToken = lc.id;
+        const rect = container.getBoundingClientRect();
+        dragOffset = { x: e.clientX - rect.left - lc.x * SQUARE_PX, y: e.clientY - rect.top - lc.y * SQUARE_PX };
+        t.style.cursor = 'grabbing';
+      });
+      layer.appendChild(t);
+    }
+  }
+
+  // For tokens to receive events, set token-layer pointer-events to none and tokens themselves to auto.
+  // But we already have an interact layer above — let's set tokens to be ABOVE interact for move tool.
+  // Easier: when in move tool, set interact pointer-events: none.
+  function updateInteractMode() {
+    const interact = document.getElementById('interact-layer');
+    if (!interact) return;
+    interact.style.pointerEvents = (currentTool === 'move') ? 'none' : 'auto';
+    interact.style.cursor = currentTool === 'erase' ? 'pointer' : 'crosshair';
+  }
+  document.querySelectorAll('#map-tools button[data-tool]').forEach(btn => {
+    btn.addEventListener('click', updateInteractMode);
+  });
+
+  function pixelToFloat(e) {
+    const rect = container.getBoundingClientRect();
+    return { x: (e.clientX - rect.left) / SQUARE_PX, y: (e.clientY - rect.top) / SQUARE_PX };
+  }
+  function pixelToSquare(e) {
+    const f = pixelToFloat(e);
+    return { x: Math.floor(f.x), y: Math.floor(f.y) };
+  }
+
+  function clearPreview() {
+    const c = document.getElementById('preview-canvas');
+    if (c) c.getContext('2d').clearRect(0,0,dispW,dispH);
+  }
+  function drawPreview() {
+    const c = document.getElementById('preview-canvas');
+    if (!c || !dragShape) return;
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0,0,dispW,dispH);
+    if (dragShape.type === 'wall') {
+      ctx.strokeStyle = '#ff4d4d'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.setLineDash([6,4]);
+      ctx.beginPath();
+      ctx.moveTo(dragShape.startX*SQUARE_PX, dragShape.startY*SQUARE_PX);
+      ctx.lineTo(dragShape.currentX*SQUARE_PX, dragShape.currentY*SQUARE_PX);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    } else if (dragShape.type === 'zone') {
+      const zoneType = document.getElementById('zone-type').value;
+      ctx.fillStyle = ZONE_COLORS[zoneType];
+      ctx.strokeStyle = ZONE_BORDER[zoneType]; ctx.lineWidth = 2; ctx.setLineDash([4,3]);
+      if (dragShape.shape === 'circle') {
+        const dx = dragShape.currentX - dragShape.startX;
+        const dy = dragShape.currentY - dragShape.startY;
+        const r = Math.sqrt(dx*dx + dy*dy);
+        ctx.beginPath();
+        ctx.arc(dragShape.startX*SQUARE_PX, dragShape.startY*SQUARE_PX, r*SQUARE_PX, 0, Math.PI*2);
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        const x1 = Math.min(dragShape.startX, dragShape.currentX);
+        const y1 = Math.min(dragShape.startY, dragShape.currentY);
+        const x2 = Math.max(dragShape.startX, dragShape.currentX);
+        const y2 = Math.max(dragShape.startY, dragShape.currentY);
+        ctx.fillRect(x1*SQUARE_PX, y1*SQUARE_PX, (x2-x1)*SQUARE_PX, (y2-y1)*SQUARE_PX);
+        ctx.strokeRect(x1*SQUARE_PX, y1*SQUARE_PX, (x2-x1)*SQUARE_PX, (y2-y1)*SQUARE_PX);
+      }
+      ctx.setLineDash([]);
+    }
+  }
+
+  function onInteractDown(e) {
+    const f = pixelToFloat(e);
+    const sq = pixelToSquare(e);
+    if (currentTool === 'wall') {
+      const sx = Math.round(f.x), sy = Math.round(f.y);
+      dragShape = { type: 'wall', startX: sx, startY: sy, currentX: sx, currentY: sy };
+    } else if (currentTool === 'zone') {
+      const shape = document.getElementById('zone-shape').value;
+      if (shape === 'circle') {
+        dragShape = { type: 'zone', shape: 'circle', startX: f.x, startY: f.y, currentX: f.x, currentY: f.y };
+      } else {
+        dragShape = { type: 'zone', shape: 'rect', startX: sq.x, startY: sq.y, currentX: sq.x+1, currentY: sq.y+1 };
+      }
+    } else if (currentTool === 'erase') {
+      // Try walls first, then zones
+      postJSON(`/sessions/${SESSION_ID}/walls`, {action: 'remove_near', x: f.x, y: f.y})
+        .then(r => r.json()).then(r => {
+          if (r.count !== undefined && lastState && r.count === (lastState.map?.walls || []).length) {
+            postJSON(`/sessions/${SESSION_ID}/zones`, {action: 'remove_at', x: f.x, y: f.y});
+          }
+        });
+    } else if (currentTool === 'draw') {
+      drawing = { color: document.getElementById('draw-color').value, width: 3, points: [[f.x, f.y]] };
+    }
+  }
+
+  function onInteractMove(e) {
+    if (drawing) {
+      const f = pixelToFloat(e);
+      const last = drawing.points[drawing.points.length - 1];
+      if (Math.abs(f.x - last[0]) + Math.abs(f.y - last[1]) > 0.05) {
+        drawing.points.push([f.x, f.y]);
+        const dc = document.getElementById('draw-canvas');
+        if (dc) {
+          const ctx = dc.getContext('2d');
+          ctx.strokeStyle = drawing.color; ctx.lineWidth = drawing.width;
+          ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+          ctx.beginPath();
+          ctx.moveTo(last[0]*SQUARE_PX, last[1]*SQUARE_PX);
+          ctx.lineTo(f.x*SQUARE_PX, f.y*SQUARE_PX);
+          ctx.stroke();
+        }
+      }
+    } else if (dragShape) {
+      const f = pixelToFloat(e);
+      if (dragShape.type === 'wall') {
+        dragShape.currentX = Math.round(f.x);
+        dragShape.currentY = Math.round(f.y);
+      } else if (dragShape.shape === 'circle') {
+        dragShape.currentX = f.x;
+        dragShape.currentY = f.y;
+      } else {
+        dragShape.currentX = Math.max(0, Math.min(COLS, Math.round(f.x)));
+        dragShape.currentY = Math.max(0, Math.min(ROWS, Math.round(f.y)));
+      }
+      drawPreview();
+    }
+  }
+
+  function onInteractUp(e) {
+    if (dragToken !== null) {
+      const rect = container.getBoundingClientRect();
+      const x = Math.floor((e.clientX - rect.left - dragOffset.x + SQUARE_PX/2) / SQUARE_PX);
+      const y = Math.floor((e.clientY - rect.top - dragOffset.y + SQUARE_PX/2) / SQUARE_PX);
+      postJSON(`/sessions/${SESSION_ID}/move`, {target_id: dragToken, x: Math.max(0, Math.min(COLS-1, x)), y: Math.max(0, Math.min(ROWS-1, y))});
+      dragToken = null;
+    }
+    if (drawing && drawing.points.length > 1) {
+      postJSON(`/sessions/${SESSION_ID}/draw`, {action: 'add', ...drawing});
+    }
+    drawing = null;
+    if (dragShape) {
+      if (dragShape.type === 'wall' && (dragShape.startX !== dragShape.currentX || dragShape.startY !== dragShape.currentY)) {
+        postJSON(`/sessions/${SESSION_ID}/walls`, {action: 'add', x1: dragShape.startX, y1: dragShape.startY, x2: dragShape.currentX, y2: dragShape.currentY});
+      } else if (dragShape.type === 'zone') {
+        const zt = document.getElementById('zone-type').value;
+        if (dragShape.shape === 'circle') {
+          const dx = dragShape.currentX - dragShape.startX;
+          const dy = dragShape.currentY - dragShape.startY;
+          const r = Math.sqrt(dx*dx + dy*dy);
+          if (r > 0.3) {
+            postJSON(`/sessions/${SESSION_ID}/zones`, {action: 'add', type: zt, shape: 'circle', cx: dragShape.startX, cy: dragShape.startY, r: r});
+          }
+        } else {
+          const x1 = Math.min(dragShape.startX, dragShape.currentX);
+          const y1 = Math.min(dragShape.startY, dragShape.currentY);
+          const x2 = Math.max(dragShape.startX, dragShape.currentX);
+          const y2 = Math.max(dragShape.startY, dragShape.currentY);
+          if (x2 > x1 && y2 > y1) {
+            postJSON(`/sessions/${SESSION_ID}/zones`, {action: 'add', type: zt, shape: 'rect', x: x1, y: y1, w: x2-x1, h: y2-y1});
+          }
+        }
+      }
+      dragShape = null;
+      clearPreview();
+    }
+  }
+
+  async function refresh() {
+    const res = await fetch(`/sessions/${SESSION_ID}/state`);
+    if (!res.ok) return;
+    lastState = await res.json();
+    if (!document.getElementById('grid-canvas')) {
+      build(lastState);
+      setTimeout(updateInteractMode, 50);
+    } else {
+      renderAll(lastState);
+    }
+  }
+
+  function connectSSE() {
+    const es = new EventSource(`/sessions/${SESSION_ID}/events`);
+    es.addEventListener('state_changed', () => refresh());
+    es.onerror = () => { setTimeout(connectSSE, 2000); es.close(); };
+  }
+
+  // Re-layout when window resizes (re-builds canvases)
+  let __resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(__resizeTimer);
+    __resizeTimer = setTimeout(() => {
+      if (lastState) build(lastState);
+      setTimeout(() => { renderAll(lastState); updateInteractMode(); }, 50);
+    }, 200);
+  });
+
+  if (document.readyState === 'complete') {
+    refresh();
+  } else {
+    window.addEventListener('load', refresh);
+  }
+  connectSSE();
+})();
+</script>
+{% endif %}
+{% endblock %}

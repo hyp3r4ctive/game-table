@@ -4,8 +4,30 @@
 <p>{{ campaign.description }}</p>
 {% if is_dm %}
     <p><em>You are the DM.</em></p>
-    <p><a href="/campaigns/{{ campaign.id }}/requests">View join requests</a></p>
+    <p>
+      <a href="/campaigns/{{ campaign.id }}/master"><strong>master view →</strong></a> ·
+      <a href="/campaigns/{{ campaign.id }}/requests">join requests</a> ·
+      <a href="/campaigns/{{ campaign.id }}/maps">battle maps</a>
+    </p>
 {% endif %}
+
+<div class="panel">
+    <h2>Live session</h2>
+    {% if active_session %}
+        <p>A session is in progress.</p>
+        {% if is_member or is_dm %}
+            <a href="/sessions/{{ active_session.id }}"><button type="button">join session</button></a>
+        {% endif %}
+    {% else %}
+        {% if is_dm %}
+            <form method="post" action="/campaigns/{{ campaign.id }}/sessions/start">
+                <button type="submit">start session</button>
+            </form>
+        {% else %}
+            <p>No active session.</p>
+        {% endif %}
+    {% endif %}
+</div>
 
 <div class="panel">
     <h2>Members</h2>

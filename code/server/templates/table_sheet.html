@@ -1,0 +1,119 @@
+{% extends "table_base.html" %}
+{% block content %}
+{% set str_mod = ((lc.strength - 10) // 2) %}
+{% set dex_mod = ((lc.dexterity - 10) // 2) %}
+{% set con_mod = ((lc.constitution - 10) // 2) %}
+{% set int_mod = ((lc.intelligence - 10) // 2) %}
+{% set wis_mod = ((lc.wisdom - 10) // 2) %}
+{% set cha_mod = ((lc.charisma - 10) // 2) %}
+{% set hp_pct = (lc.current_hp / lc.max_hp * 100) if lc.max_hp else 0 %}
+{% set is_my_turn = lc.name == (gs.initiative_order[gs.current_turn_index].name if (gs.in_combat and gs.initiative_order) else None) %}
+
+<div class="panel" style="border-color: {% if is_my_turn %}#d4a017{% else %}#444{% endif %}; border-width: 2px">
+  <div class="row" style="justify-content: space-between">
+    <div>
+      <h1 style="margin-bottom: 0">{{ lc.name }}</h1>
+      <span class="meta">
+        {% if char and char.race %}{{ char.race }}{% if char.subrace %} ({{ char.subrace }}){% endif %} · {% endif %}
+        {{ lc.character_class or "adventurer" }}{% if char and char.subclass %} ({{ char.subclass }}){% endif %} · level {{ lc.level }}
+      </span>
+    </div>
+    <div class="row" style="gap: 18px">
+      <div class="center"><div class="meta">AC</div><div style="font-size: 1.8em; color: #d4a017">{{ lc.armor_class }}</div></div>
+      <div class="center"><div class="meta">SPD</div><div style="font-size: 1.4em">{{ lc.speed_ft }}</div></div>
+    </div>
+  </div>
+
+  <div style="margin-top: 12px">
+    <div class="row" style="justify-content: space-between">
+      <strong>HP</strong>
+      <span>{{ lc.current_hp }} / {{ lc.max_hp }}{% if lc.temp_hp %} (+{{ lc.temp_hp }} temp){% endif %}</span>
+    </div>
+    <div class="hp-bar"><div class="hp-fill {% if hp_pct < 30 %}low{% endif %}" style="width: {{ hp_pct }}%"></div></div>
+  </div>
+
+  {% if lc.conditions %}
+    <div class="conditions" style="margin-top: 8px">
+      conditions:
+      {% for c in lc.conditions %}{{ c.name }}{% if c.duration_rounds %} ({{ c.duration_rounds }}r){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+    </div>
+  {% endif %}
+
+  {% if is_my_turn %}
+    <div style="margin-top: 8px; color: #d4a017; font-weight: bold">⟶ your turn</div>
+  {% elif gs.in_combat %}
+    <div class="meta" style="margin-top: 8px">round {{ gs.round_number }}</div>
+  {% endif %}
+</div>
+
+<div class="stat-grid">
+  <div class="stat-box"><div class="label">str</div><div class="score">{{ lc.strength }}</div><div class="mod">{{ "+%d"|format(str_mod) if str_mod >= 0 else "%d"|format(str_mod) }}</div></div>
+  <div class="stat-box"><div class="label">dex</div><div class="score">{{ lc.dexterity }}</div><div class="mod">{{ "+%d"|format(dex_mod) if dex_mod >= 0 else "%d"|format(dex_mod) }}</div></div>
+  <div class="stat-box"><div class="label">con</div><div class="score">{{ lc.constitution }}</div><div class="mod">{{ "+%d"|format(con_mod) if con_mod >= 0 else "%d"|format(con_mod) }}</div></div>
+  <div class="stat-box"><div class="label">int</div><div class="score">{{ lc.intelligence }}</div><div class="mod">{{ "+%d"|format(int_mod) if int_mod >= 0 else "%d"|format(int_mod) }}</div></div>
+  <div class="stat-box"><div class="label">wis</div><div class="score">{{ lc.wisdom }}</div><div class="mod">{{ "+%d"|format(wis_mod) if wis_mod >= 0 else "%d"|format(wis_mod) }}</div></div>
+  <div class="stat-box"><div class="label">cha</div><div class="score">{{ lc.charisma }}</div><div class="mod">{{ "+%d"|format(cha_mod) if cha_mod >= 0 else "%d"|format(cha_mod) }}</div></div>
+</div>
+
+{% if lc.spell_slots %}
+<div class="panel">
+  <strong>spell slots:</strong>
+  {% for k, v in lc.spell_slots.items() %}<span style="margin-right: 12px">L{{ k }}: {{ v }}</span>{% endfor %}
+</div>
+{% endif %}
+
+<div class="panel">
+  <strong>party</strong>
+  <table>
+    <tr><th>name</th><th>HP</th><th>conditions</th></tr>
+    {% for other in live_characters %}
+      {% if not other.is_enemy %}
+        {% set other_pct = (other.current_hp / other.max_hp * 100) if other.max_hp else 0 %}
+        <tr>
+          <td>{{ other.name }}{% if other.id == lc.id %} <span class="meta">(you)</span>{% endif %}</td>
+          <td>
+            <div style="width: 80px; display: inline-block; vertical-align: middle">
+              <div class="hp-bar"><div class="hp-fill {% if other_pct < 30 %}low{% endif %}" style="width: {{ other_pct }}%"></div></div>
+            </div>
+            <span class="meta">{{ other.current_hp }}/{{ other.max_hp }}</span>
+          </td>
+          <td class="conditions">
+            {% for c in other.conditions %}{{ c.name }}{% if not loop.last %}, {% endif %}{% endfor %}
+          </td>
+        </tr>
+      {% endif %}
+    {% endfor %}
+  </table>
+</div>
+
+{% set has_enemies = false %}
+{% for other in live_characters %}{% if other.is_enemy %}{% set has_enemies = true %}{% endif %}{% endfor %}
+{% if has_enemies %}
+<div class="panel">
+  <strong>enemies</strong>
+  <table>
+    <tr><th>name</th><th>status</th><th>conditions</th></tr>
+    {% for other in live_characters %}
+      {% if other.is_enemy %}
+        {% set other_pct = (other.current_hp / other.max_hp * 100) if other.max_hp else 0 %}
+        {% set status = "healthy" %}
+        {% if other.current_hp <= 0 %}{% set status = "down" %}
+        {% elif other_pct < 25 %}{% set status = "near death" %}
+        {% elif other_pct < 50 %}{% set status = "bloodied" %}
+        {% elif other_pct < 90 %}{% set status = "wounded" %}
+        {% endif %}
+        <tr>
+          <td>{{ other.name }}</td>
+          <td>{{ status }}</td>
+          <td class="conditions">{% for c in other.conditions %}{{ c.name }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+        </tr>
+      {% endif %}
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+<form method="post" action="/table/seat/{{ seat }}/release" style="margin-top: 16px">
+  <button type="submit" style="background: #444; color: #ccc; padding: 6px 12px; font-size: 0.85em">release seat</button>
+</form>
+{% endblock %}

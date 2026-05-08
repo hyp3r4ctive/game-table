@@ -1,0 +1,82 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>seat {{ seat }}</title>
+  <meta http-equiv="refresh" content="{{ refresh_seconds|default(5) }}">
+  <style>
+    :root {
+      --bg-base: #14171a;
+      --bg-panel: #1d2125;
+      --bg-input: #14171a;
+      --bg-elevated: #262b31;
+      --border: #353c45;
+      --teal: #2a9d8f;
+      --teal-bright: #3ab5a6;
+      --text: #f2f4f6;
+      --text-dim: #aab1ba;
+      --text-faint: #6c7480;
+      --danger: #c45a5a;
+    }
+    * { box-sizing: border-box; }
+    body {
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+      background: var(--bg-base);
+      color: var(--text);
+      margin: 0;
+      padding: 16px;
+      min-height: 100vh;
+      font-size: 15px;
+    }
+    h1, h2, h3 { margin: 8px 0; font-weight: 600; }
+    h1 { color: var(--text); font-size: 1.6em; }
+    h2 { color: var(--teal-bright); font-size: 1.2em; }
+    h3 { color: var(--teal-bright); font-size: 1.05em; }
+    .seat-tag { position: fixed; top: 10px; right: 14px; color: var(--text-faint); font-size: 0.85em; letter-spacing: 0.05em; text-transform: uppercase; }
+    button {
+      background: var(--teal);
+      color: #fff;
+      border: 1px solid var(--teal);
+      padding: 14px 22px;
+      border-radius: 8px;
+      cursor: pointer;
+      font-family: inherit;
+      font-weight: 600;
+      font-size: 1em;
+      transition: background 0.12s;
+    }
+    button:hover { background: var(--teal-bright); border-color: var(--teal-bright); }
+    .big-card {
+      background: var(--bg-panel);
+      border: 2px solid var(--border);
+      border-radius: 10px;
+      padding: 18px;
+      margin-bottom: 12px;
+      transition: border-color 0.12s;
+    }
+    .big-card:hover { border-color: var(--teal); }
+    .big-card form button { width: 100%; padding: 22px; font-size: 1.2em; }
+    .center { text-align: center; }
+    .pulse { animation: pulse 2s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 0.5 } 50% { opacity: 1 } }
+    .panel { background: var(--bg-panel); border: 1px solid var(--border); border-radius: 8px; padding: 14px; margin-bottom: 12px; }
+    .hp-bar { background: #0f1316; height: 14px; border-radius: 6px; overflow: hidden; border: 1px solid var(--border); }
+    .hp-fill { background: var(--teal); height: 100%; transition: width 0.3s; }
+    .hp-fill.low { background: var(--danger); }
+    .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+    .stat-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; margin: 12px 0; }
+    .stat-box { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; padding: 10px; text-align: center; }
+    .stat-box .label { font-size: 0.72em; color: var(--text-faint); text-transform: uppercase; letter-spacing: 0.08em; }
+    .stat-box .score { font-size: 1.6em; color: var(--text); font-weight: 600; }
+    .stat-box .mod { font-size: 0.9em; color: var(--teal-bright); }
+    table { width: 100%; border-collapse: collapse; }
+    td, th { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: left; }
+    th { color: var(--text-faint); font-weight: 500; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.05em; }
+    .conditions { color: #b0a0d0; }
+    .meta { color: var(--text-faint); font-size: 0.88em; }
+  </style>
+</head>
+<body>
+  <span class="seat-tag">seat {{ seat }}</span>
+  {% block content %}{% endblock %}
+</body>
+</html>

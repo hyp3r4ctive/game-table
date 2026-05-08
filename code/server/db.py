@@ -1,4 +1,5 @@
 from sqlmodel import SQLModel, Field, Relationship, create_engine, Session
+from sqlalchemy import Column, JSON
 from typing import Optional
 from datetime import datetime
 
@@ -17,21 +18,53 @@ class Character(SQLModel, table=True):
     id: Optional[int] = Field(default=None, primary_key=True)
     owner_id: int = Field(foreign_key="user.id")
     name: str
+    player_name: str = ""
+    race: str = ""
+    subrace: str = ""
     character_class: str = ""
+    subclass: str = ""
+    background: str = ""
+    alignment: str = ""
     level: int = 1
+    experience_points: int = 0
     max_hp: int = 10
     current_hp: int = 10
+    temp_hp: int = 0
     armor_class: int = 10
     speed_ft: int = 30
+    initiative_bonus: int = 0
+    hit_die: str = "d8"
+    hit_dice_used: int = 0
     strength: int = 10
     dexterity: int = 10
     constitution: int = 10
     intelligence: int = 10
     wisdom: int = 10
     charisma: int = 10
+    spellcasting_ability: str = ""
+    inspiration: bool = False
+    darkvision_ft: int = 0
+    vision_normal_ft: int = 0
+    light_emission_ft: int = 0
+    saving_throw_profs: list = Field(default_factory=list, sa_column=Column(JSON))
+    skill_profs: list = Field(default_factory=list, sa_column=Column(JSON))
+    skill_expertises: list = Field(default_factory=list, sa_column=Column(JSON))
+    languages: list = Field(default_factory=list, sa_column=Column(JSON))
+    features: list = Field(default_factory=list, sa_column=Column(JSON))
+    equipment: list = Field(default_factory=list, sa_column=Column(JSON))
+    money: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    spells_known: list = Field(default_factory=list, sa_column=Column(JSON))
+    spell_slots_max: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    spell_slots_used: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    personality_traits: str = ""
+    ideals: str = ""
+    bonds: str = ""
+    flaws: str = ""
+    backstory: str = ""
     is_template: bool = True
     is_enemy: bool = False
     notes: str = ""
+    dm_notes: str = ""
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -70,8 +103,128 @@ class JoinRequest(SQLModel, table=True):
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
+class GameSession(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    campaign_id: int = Field(foreign_key="campaign.id")
+    dm_id: int = Field(foreign_key="user.id")
+    is_active: bool = True
+    pushed_to_table: bool = False
+    in_combat: bool = False
+    round_number: int = 0
+    current_turn_index: int = 0
+    initiative_order: list = Field(default_factory=list, sa_column=Column(JSON))
+    event_log: list = Field(default_factory=list, sa_column=Column(JSON))
+    seat_assignments: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    active_map_id: Optional[int] = Field(default=None, foreign_key="map.id")
+    fog_revealed: list = Field(default_factory=list, sa_column=Column(JSON))
+    drawings: list = Field(default_factory=list, sa_column=Column(JSON))
+    started_at: datetime = Field(default_factory=datetime.utcnow)
+    ended_at: Optional[datetime] = None
+
+
+class Map(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    campaign_id: int = Field(foreign_key="campaign.id")
+    name: str
+    image_path: Optional[str] = None
+    grid_cols: int = 60
+    grid_rows: int = 48
+    grid_type: str = "square"  # "square" or "hex" (flat-top)
+    walls: list = Field(default_factory=list, sa_column=Column(JSON))
+    zones: list = Field(default_factory=list, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class LiveCharacter(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    session_id: int = Field(foreign_key="gamesession.id")
+    source_character_id: Optional[int] = Field(default=None, foreign_key="character.id")
+    owner_id: Optional[int] = Field(default=None, foreign_key="user.id")
+    name: str
+    character_class: str = ""
+    level: int = 1
+    max_hp: int = 10
+    current_hp: int = 10
+    temp_hp: int = 0
+    armor_class: int = 10
+    speed_ft: int = 30
+    strength: int = 10
+    dexterity: int = 10
+    constitution: int = 10
+    intelligence: int = 10
+    wisdom: int = 10
+    charisma: int = 10
+    is_enemy: bool = False
+    is_active: bool = True
+    initiative: int = 0
+    position_x: Optional[int] = None
+    position_y: Optional[int] = None
+    darkvision_ft: int = 0
+    vision_normal_ft: int = 0
+    light_emission_ft: int = 0
+    conditions: list = Field(default_factory=list, sa_column=Column(JSON))
+    spell_slots: dict = Field(default_factory=dict, sa_column=Column(JSON))
+
+
+_SQLITE_TYPE_MAP = {
+    "INTEGER": "INTEGER",
+    "TEXT": "TEXT",
+    "VARCHAR": "TEXT",
+    "BOOLEAN": "INTEGER",
+    "FLOAT": "REAL",
+    "DATETIME": "TEXT",
+    "JSON": "TEXT",
+}
+
+
+def _sa_type_to_sqlite(col_type) -> str:
+    name = type(col_type).__name__.upper()
+    return _SQLITE_TYPE_MAP.get(name, "TEXT")
+
+
+def _sqlite_default(col) -> str | None:
+    if col.default is not None and not callable(col.default.arg if hasattr(col.default, "arg") else col.default):
+        val = col.default.arg if hasattr(col.default, "arg") else col.default
+        if isinstance(val, bool):
+            return "1" if val else "0"
+        if isinstance(val, (int, float)):
+            return str(val)
+        if isinstance(val, str):
+            return f"'{val.replace(chr(39), chr(39)*2)}'"
+    return None
+
+
+def _migrate_add_missing_columns():
+    """Add columns to existing tables that the model declares but the DB lacks. SQLite-only."""
+    from sqlalchemy import inspect, text
+    inspector = inspect(engine)
+    existing_tables = set(inspector.get_table_names())
+    with engine.begin() as conn:
+        for table_name, table in SQLModel.metadata.tables.items():
+            if table_name not in existing_tables:
+                continue
+            existing_cols = {c["name"] for c in inspector.get_columns(table_name)}
+            for col in table.columns:
+                if col.name in existing_cols:
+                    continue
+                type_name = type(col.type).__name__.upper()
+                col_type = _sa_type_to_sqlite(col.type)
+                default_clause = ""
+                if type_name == "JSON":
+                    default_clause = ""  # leave NULL; code handles None
+                else:
+                    default_val = _sqlite_default(col)
+                    if default_val is not None:
+                        default_clause = f" DEFAULT {default_val}"
+                    elif not col.nullable and col.default is None:
+                        default_clause = " DEFAULT ''" if col_type == "TEXT" else " DEFAULT 0"
+                stmt = f'ALTER TABLE "{table_name}" ADD COLUMN "{col.name}" {col_type}{default_clause}'
+                conn.execute(text(stmt))
+
+
 def init_db():
     SQLModel.metadata.create_all(engine)
+    _migrate_add_missing_columns()
 
 
 def get_session():

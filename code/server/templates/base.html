@@ -3,20 +3,121 @@
 <head>
     <title>{% block title %}DND Table{% endblock %}</title>
     <style>
-        body { font-family: monospace; background: #1a1a1a; color: #e0e0e0; padding: 20px; max-width: 1000px; margin: 0 auto; }
-        h1, h2, h3 { color: #d4a017; }
-        a { color: #d4a017; }
-        .panel { background: #2a2a2a; border: 1px solid #444; border-radius: 6px; padding: 16px; margin-bottom: 16px; }
-        button, input[type="submit"] { background: #d4a017; color: #1a1a1a; border: none; padding: 8px 16px; border-radius: 4px; cursor: pointer; font-family: monospace; font-weight: bold; }
-        input[type="text"], input[type="password"], input[type="number"], textarea { background: #1a1a1a; color: #e0e0e0; border: 1px solid #444; padding: 6px; border-radius: 4px; font-family: monospace; width: 100%; box-sizing: border-box; margin-bottom: 8px; }
-        label { display: block; margin-top: 8px; }
-        .error { color: #b04848; }
-        nav { margin-bottom: 20px; padding-bottom: 10px; border-bottom: 1px solid #444; }
+      :root {
+        --bg-base: #1a1d21;
+        --bg-panel: #23272d;
+        --bg-input: #181b1f;
+        --bg-elevated: #2a2f36;
+        --border: #3a4049;
+        --border-strong: #4a525d;
+        --teal: #2a9d8f;
+        --teal-bright: #3ab5a6;
+        --teal-deep: #1f7a70;
+        --text: #f2f4f6;
+        --text-dim: #aab1ba;
+        --text-faint: #6c7480;
+        --danger: #c45a5a;
+        --warn: #d4a017;
+        --accent: var(--teal);
+      }
+      * { box-sizing: border-box; }
+      body {
+        font-family: 'Inter', system-ui, -apple-system, sans-serif;
+        background: var(--bg-base);
+        color: var(--text);
+        padding: 20px;
+        max-width: 1400px;
+        margin: 0 auto;
+        font-size: 14px;
+        line-height: 1.45;
+      }
+      body.wide { max-width: none; }
+      h1, h2, h3 { color: var(--text); font-weight: 600; letter-spacing: -0.01em; }
+      h1 { font-size: 1.7em; margin: 0 0 12px; }
+      h2 { font-size: 1.25em; margin: 0 0 10px; color: var(--teal-bright); }
+      h3 { font-size: 1.05em; margin: 0 0 8px; color: var(--teal-bright); }
+      a { color: var(--teal-bright); text-decoration: none; border-bottom: 1px solid transparent; }
+      a:hover { border-bottom-color: var(--teal-bright); }
+      .panel {
+        background: var(--bg-panel);
+        border: 1px solid var(--border);
+        border-radius: 8px;
+        padding: 16px;
+        margin-bottom: 14px;
+      }
+      button, input[type="submit"] {
+        background: var(--teal);
+        color: #fff;
+        border: 1px solid var(--teal);
+        padding: 8px 16px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-family: inherit;
+        font-weight: 500;
+        font-size: 0.95em;
+        transition: background 0.12s, border-color 0.12s;
+      }
+      button:hover, input[type="submit"]:hover { background: var(--teal-bright); border-color: var(--teal-bright); }
+      button:active { background: var(--teal-deep); }
+      button.secondary {
+        background: var(--bg-elevated);
+        color: var(--text);
+        border-color: var(--border-strong);
+      }
+      button.secondary:hover { background: var(--border); border-color: var(--border-strong); }
+      button.danger { background: var(--danger); border-color: var(--danger); }
+      button.danger:hover { background: #d36b6b; border-color: #d36b6b; }
+      button.small { padding: 5px 10px; font-size: 0.85em; }
+      input[type="text"], input[type="password"], input[type="number"], input[type="email"], textarea, select {
+        background: var(--bg-input);
+        color: var(--text);
+        border: 1px solid var(--border);
+        padding: 8px 10px;
+        border-radius: 6px;
+        font-family: inherit;
+        font-size: 0.95em;
+        width: 100%;
+        margin-bottom: 8px;
+        transition: border-color 0.12s;
+      }
+      input:focus, textarea:focus, select:focus {
+        outline: none;
+        border-color: var(--teal);
+      }
+      input[type="checkbox"], input[type="radio"] {
+        accent-color: var(--teal);
+        width: auto;
+        margin-bottom: 0;
+      }
+      label { display: block; margin-top: 6px; color: var(--text-dim); font-size: 0.9em; }
+      label > input, label > select, label > textarea { margin-top: 4px; }
+      .error { color: var(--danger); }
+      .meta { color: var(--text-faint); font-size: 0.88em; }
+      nav {
+        margin-bottom: 24px;
+        padding-bottom: 14px;
+        border-bottom: 1px solid var(--border);
+        display: flex;
+        gap: 16px;
+        align-items: center;
+      }
+      nav a { color: var(--text-dim); }
+      nav a:hover { color: var(--text); border-bottom-color: var(--text); }
+      ul { padding-left: 22px; }
+      li { margin-bottom: 4px; }
+      hr { border: none; border-top: 1px solid var(--border); margin: 18px 0; }
+      .row { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
+      .pill { display: inline-block; padding: 2px 8px; border-radius: 999px; font-size: 0.78em; background: var(--bg-elevated); color: var(--text-dim); border: 1px solid var(--border); }
+      .pill.teal { background: rgba(42, 157, 143, 0.15); color: var(--teal-bright); border-color: var(--teal-deep); }
+      .pill.warn { background: rgba(212, 160, 23, 0.15); color: var(--warn); border-color: rgba(212, 160, 23, 0.3); }
+      .pill.danger { background: rgba(196, 90, 90, 0.15); color: var(--danger); border-color: rgba(196, 90, 90, 0.3); }
     </style>
 </head>
-<body>
+<body class="{% block body_class %}{% endblock %}">
     <nav>
-        <a href="/dashboard">dashboard</a> |
+        <a href="/dashboard">dashboard</a>
+        <a href="/campaigns">campaigns</a>
+        <span style="flex:1"></span>
         <a href="/logout">logout</a>
     </nav>
     {% block content %}{% endblock %}

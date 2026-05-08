@@ -1,0 +1,381 @@
+{% extends "base.html" %}
+{% block content %}
+{% set c = character %}
+{% set editing = c is not none %}
+<style>
+  .form-grid { display: grid; gap: 16px; }
+  .form-row { display: grid; gap: 8px; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+  .ability-grid { display: grid; grid-template-columns: repeat(6, 1fr); gap: 8px; }
+  .ability-grid .stat-box { background: #1a1a1a; border: 1px solid #444; border-radius: 6px; padding: 8px; text-align: center; }
+  .ability-grid .stat-box label { display: block; font-size: 0.8em; color: #999; margin: 0; text-transform: uppercase; }
+  .ability-grid .stat-box input { width: 60px; text-align: center; font-size: 1.4em; margin: 4px auto; padding: 4px; }
+  .ability-grid .mod { color: #d4a017; font-weight: bold; }
+  .skill-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 4px; }
+  .skill-row { display: flex; gap: 8px; align-items: center; padding: 4px; background: #1a1a1a; border-radius: 4px; }
+  .skill-row label { margin: 0; flex: 1; font-size: 0.9em; }
+  details { background: #2a2a2a; padding: 12px; border-radius: 6px; margin-bottom: 12px; }
+  details > summary { font-size: 1.15em; font-weight: bold; color: #d4a017; cursor: pointer; padding: 4px 0; list-style: none; }
+  details > summary::before { content: "▸ "; }
+  details[open] > summary::before { content: "▾ "; }
+  textarea { min-height: 80px; }
+  .small-num { width: 70px !important; text-align: center; }
+  .slot-row { display: grid; grid-template-columns: 50px 1fr 1fr; gap: 8px; align-items: center; margin-bottom: 4px; }
+  .slot-row label { margin: 0; }
+</style>
+
+<h1>{{ "edit character" if editing else "new character" }}</h1>
+<p class="meta"><a href="/dashboard">back to dashboard</a></p>
+
+<form method="post" action="{{ '/characters/' ~ c.id ~ '/edit' if editing else '/characters/new' }}">
+
+<details open>
+<summary>identity</summary>
+<div class="form-grid">
+  <div class="form-row">
+    <label>character name<input type="text" name="name" value="{{ c.name if c else '' }}" required></label>
+    <label>player name<input type="text" name="player_name" value="{{ c.player_name if c else '' }}"></label>
+    <label>alignment<input type="text" name="alignment" placeholder="lawful good" value="{{ c.alignment if c else '' }}"></label>
+  </div>
+  <div class="form-row">
+    <label>level<input type="number" name="level" min="1" max="20" value="{{ c.level if c else 1 }}"></label>
+    <label>experience<input type="number" name="experience_points" min="0" value="{{ c.experience_points if c else 0 }}"></label>
+    <label><input type="checkbox" name="inspiration" {% if c and c.inspiration %}checked{% endif %}> inspiration</label>
+  </div>
+</div>
+</details>
+
+<details open>
+<summary>race</summary>
+<div class="form-row">
+  <label>race
+    <select name="race" id="race-select" onchange="onRaceChange()">
+      <option value="">— choose —</option>
+      {% for r in races %}<option value="{{ r.key }}" {% if c and c.race == r.key %}selected{% endif %}>{{ r.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>subrace
+    <select name="subrace" id="subrace-select"><option value="">—</option></select>
+  </label>
+</div>
+<div id="race-traits" class="meta" style="margin-top: 8px"></div>
+</details>
+
+<details open>
+<summary>class &amp; background</summary>
+<div class="form-row">
+  <label>class
+    <select name="character_class" id="class-select" onchange="onClassChange()">
+      <option value="">— choose —</option>
+      {% for cl in classes %}<option value="{{ cl.key }}" {% if c and c.character_class == cl.key %}selected{% endif %}>{{ cl.name }}</option>{% endfor %}
+    </select>
+  </label>
+  <label>subclass<input type="text" name="subclass" placeholder="e.g. Champion, School of Evocation" value="{{ c.subclass if c else '' }}"></label>
+  <label>background
+    <select name="background" id="bg-select" onchange="onBgChange()">
+      <option value="">— choose —</option>
+      {% for bg in backgrounds %}<option value="{{ bg.key }}" {% if c and c.background == bg.key %}selected{% endif %}>{{ bg.name }}</option>{% endfor %}
+    </select>
+  </label>
+</div>
+<div id="class-info" class="meta" style="margin-top: 8px"></div>
+<div id="bg-info" class="meta" style="margin-top: 8px"></div>
+</details>
+
+<details open>
+<summary>ability scores</summary>
+<div class="ability-grid">
+  {% for ab in abilities %}
+    <div class="stat-box">
+      <label>{{ ab[:3] }}</label>
+      <input type="number" name="{{ ab }}" min="1" max="30" value="{{ c[ab] if c else 10 }}" class="ability-input" data-ab="{{ ab }}" oninput="recalc()">
+      <div class="mod" id="mod-{{ ab }}">+0</div>
+    </div>
+  {% endfor %}
+</div>
+<div class="form-row" style="margin-top: 12px">
+  <label>spellcasting ability
+    <select name="spellcasting_ability">
+      <option value="">— none —</option>
+      {% for ab in abilities %}<option value="{{ ab }}" {% if c and c.spellcasting_ability == ab %}selected{% endif %}>{{ ab }}</option>{% endfor %}
+    </select>
+  </label>
+  <div class="meta">proficiency bonus: <span id="pb-display">+2</span></div>
+</div>
+</details>
+
+<details open>
+<summary>saving throws</summary>
+<div class="skill-grid">
+  {% for ab in abilities %}
+    <div class="skill-row">
+      <input type="checkbox" name="saving_throw_profs" value="{{ ab }}" id="save-{{ ab }}" onchange="recalc()" {% if c and ab in c.saving_throw_profs %}checked{% endif %}>
+      <label for="save-{{ ab }}">{{ ab }}</label>
+      <span class="meta" id="save-total-{{ ab }}">+0</span>
+    </div>
+  {% endfor %}
+</div>
+</details>
+
+<details open>
+<summary>skills</summary>
+<div class="skill-grid">
+  {% for skill, ab in skills.items() %}
+    <div class="skill-row" data-skill="{{ skill }}" data-ab="{{ ab }}">
+      <input type="checkbox" name="skill_profs" value="{{ skill }}" id="prof-{{ loop.index }}" onchange="recalc()" {% if c and skill in c.skill_profs %}checked{% endif %} title="proficient">
+      <input type="checkbox" name="skill_expertises" value="{{ skill }}" id="exp-{{ loop.index }}" onchange="recalc()" {% if c and skill in c.skill_expertises %}checked{% endif %} title="expertise">
+      <label for="prof-{{ loop.index }}">{{ skill }} <span class="meta">({{ ab[:3] }})</span></label>
+      <span class="meta" id="skill-total-{{ loop.index }}">+0</span>
+    </div>
+  {% endfor %}
+</div>
+<p class="meta" style="margin-top: 8px">first checkbox = proficient · second = expertise</p>
+</details>
+
+<details>
+<summary>combat</summary>
+<div class="form-row">
+  <label>max HP<input type="number" name="max_hp" min="1" value="{{ c.max_hp if c else 10 }}"></label>
+  <label>current HP<input type="number" name="current_hp" min="0" value="{{ c.current_hp if c else 10 }}"></label>
+  <label>temp HP<input type="number" name="temp_hp" min="0" value="{{ c.temp_hp if c else 0 }}"></label>
+  <label>armor class<input type="number" name="armor_class" min="1" value="{{ c.armor_class if c else 10 }}"></label>
+  <label>speed (ft)<input type="number" name="speed_ft" min="0" value="{{ c.speed_ft if c else 30 }}"></label>
+  <label>initiative bonus<input type="number" name="initiative_bonus" value="{{ c.initiative_bonus if c else 0 }}"></label>
+  <label>hit die<input type="text" name="hit_die" placeholder="d8" value="{{ c.hit_die if c else 'd8' }}"></label>
+  <label>hit dice used<input type="number" name="hit_dice_used" min="0" value="{{ c.hit_dice_used if c else 0 }}"></label>
+</div>
+</details>
+
+<details>
+<summary>vision</summary>
+<div class="form-row">
+  <label>darkvision (ft)
+    <input type="number" name="darkvision_ft" id="darkvision-input" min="0" value="{{ c.darkvision_ft if c else 0 }}">
+  </label>
+  <label>normal sight (ft, 0 = unlimited)
+    <input type="number" name="vision_normal_ft" min="0" value="{{ c.vision_normal_ft if c else 0 }}">
+  </label>
+  <label>light emission (ft, e.g. torch = 30)
+    <input type="number" name="light_emission_ft" min="0" value="{{ c.light_emission_ft if c else 0 }}">
+  </label>
+</div>
+<p class="meta">darkvision auto-fills from race. light emission is for held torches/light spells.</p>
+</details>
+
+<details>
+<summary>languages &amp; equipment</summary>
+<label>languages (comma-separated)
+  <input type="text" name="languages_csv" value="{{ (c.languages | join(', ')) if c else '' }}" placeholder="Common, Elvish, Dwarvish">
+</label>
+<label>equipment (one per line)
+  <textarea name="equipment_text" placeholder="longsword&#10;chain mail&#10;backpack">{% if c %}{% for item in c.equipment %}{{ item.name }}
+{% endfor %}{% endif %}</textarea>
+</label>
+<label>money</label>
+<div class="form-row">
+  {% for coin in ['cp', 'sp', 'ep', 'gp', 'pp'] %}
+    <label>{{ coin }}<input type="number" name="money_{{ coin }}" min="0" value="{{ (c.money[coin] if c and c.money and coin in c.money else 0) }}" class="small-num"></label>
+  {% endfor %}
+</div>
+</details>
+
+<details>
+<summary>features &amp; traits</summary>
+<label>features (one per line, format: "name: description")
+  <textarea name="features_text" rows="6">{% if c %}{% for feat in c.features %}{{ feat.name }}{% if feat.description %}: {{ feat.description }}{% endif %}
+{% endfor %}{% endif %}</textarea>
+</label>
+</details>
+
+<details>
+<summary>spells</summary>
+<label>spells known (ctrl/cmd-click for multiple)
+  <select name="spells_known" multiple size="10">
+    {% for key, sp in spells_json.items() %}
+      <option value="{{ key }}" {% if c and key in c.spells_known %}selected{% endif %}>L{{ sp.level }} — {{ sp.name }}</option>
+    {% endfor %}
+  </select>
+</label>
+<p class="meta">spell slots (leave at 0 if not a caster)</p>
+{% for lvl in range(1, 10) %}
+  <div class="slot-row">
+    <label>L{{ lvl }}</label>
+    <label>max <input type="number" name="slot_max_{{ lvl }}" min="0" value="{{ (c.spell_slots_max[lvl|string] if c and c.spell_slots_max and (lvl|string) in c.spell_slots_max else 0) }}"></label>
+    <label>used <input type="number" name="slot_used_{{ lvl }}" min="0" value="{{ (c.spell_slots_used[lvl|string] if c and c.spell_slots_used and (lvl|string) in c.spell_slots_used else 0) }}"></label>
+  </div>
+{% endfor %}
+<button type="button" onclick="autofillSlots()">auto-fill slots from class &amp; level</button>
+</details>
+
+<details>
+<summary>personality</summary>
+<label>traits<textarea name="personality_traits">{{ c.personality_traits if c else '' }}</textarea></label>
+<label>ideals<textarea name="ideals">{{ c.ideals if c else '' }}</textarea></label>
+<label>bonds<textarea name="bonds">{{ c.bonds if c else '' }}</textarea></label>
+<label>flaws<textarea name="flaws">{{ c.flaws if c else '' }}</textarea></label>
+<label>backstory<textarea name="backstory" rows="6">{{ c.backstory if c else '' }}</textarea></label>
+</details>
+
+<details>
+<summary>notes</summary>
+<label>notes (player-visible)<textarea name="notes" rows="4">{{ c.notes if c else '' }}</textarea></label>
+</details>
+
+<button type="submit" style="font-size: 1.1em; padding: 12px 24px">{{ "save changes" if editing else "create character" }}</button>
+
+</form>
+
+<script>
+const RACES = {{ races_json | tojson }};
+const CLASSES = {{ classes_json | tojson }};
+const BACKGROUNDS = {{ backgrounds | tojson }};
+const SKILL_ABILITIES = {{ skills | tojson }};
+const ABILITIES = {{ abilities | tojson }};
+
+const initialSubrace = {{ (c.subrace if c else '') | tojson }};
+
+function abMod(score) { return Math.floor((score - 10) / 2); }
+function fmt(n) { return (n >= 0 ? "+" : "") + n; }
+function pbForLevel(lvl) {
+  if (lvl < 5) return 2;
+  if (lvl < 9) return 3;
+  if (lvl < 13) return 4;
+  if (lvl < 17) return 5;
+  return 6;
+}
+
+function recalc() {
+  const scores = {};
+  ABILITIES.forEach(ab => {
+    const v = parseInt(document.querySelector(`input[name="${ab}"]`).value) || 10;
+    scores[ab] = v;
+    document.getElementById(`mod-${ab}`).textContent = fmt(abMod(v));
+  });
+  const lvl = parseInt(document.querySelector('input[name="level"]').value) || 1;
+  const pb = pbForLevel(lvl);
+  document.getElementById('pb-display').textContent = fmt(pb);
+  ABILITIES.forEach(ab => {
+    const prof = document.getElementById(`save-${ab}`).checked;
+    const total = abMod(scores[ab]) + (prof ? pb : 0);
+    document.getElementById(`save-total-${ab}`).textContent = fmt(total);
+  });
+  document.querySelectorAll('.skill-row[data-skill]').forEach((row, i) => {
+    const ab = row.dataset.ab;
+    const profBox = row.querySelector('input[name="skill_profs"]');
+    const expBox = row.querySelector('input[name="skill_expertises"]');
+    let total = abMod(scores[ab]);
+    if (expBox.checked) total += pb * 2;
+    else if (profBox.checked) total += pb;
+    row.querySelector('span[id^="skill-total-"]').textContent = fmt(total);
+  });
+}
+
+function populateSubrace(raceKey, selected) {
+  const sub = document.getElementById('subrace-select');
+  sub.innerHTML = '<option value="">—</option>';
+  if (!raceKey || !RACES[raceKey]) return;
+  const subraces = RACES[raceKey].subraces || {};
+  Object.entries(subraces).forEach(([k, v]) => {
+    const opt = document.createElement('option');
+    opt.value = k;
+    opt.textContent = v.name;
+    if (selected === k) opt.selected = true;
+    sub.appendChild(opt);
+  });
+}
+
+function onRaceChange() {
+  const sel = document.getElementById('race-select').value;
+  populateSubrace(sel, '');
+  const traits = document.getElementById('race-traits');
+  if (sel && RACES[sel]) {
+    const r = RACES[sel];
+    const bonusStr = Object.entries(r.ability_bonuses || {}).map(([k, v]) => `${k.slice(0,3)} +${v}`).join(', ');
+    traits.innerHTML = `<strong>${r.name}</strong>: speed ${r.speed_ft}ft, ${bonusStr}. Traits: ${(r.traits || []).map(t => t.name).join(', ') || '—'}`;
+    const dv = document.getElementById('darkvision-input');
+    if (dv && (!dv.value || dv.value === '0')) dv.value = r.darkvision_ft || 0;
+    const sp = document.querySelector('input[name="speed_ft"]');
+    if (sp && (!sp.value || sp.value === '30')) sp.value = r.speed_ft || 30;
+  } else {
+    traits.innerHTML = '';
+  }
+}
+
+function onClassChange() {
+  const sel = document.getElementById('class-select').value;
+  const info = document.getElementById('class-info');
+  if (sel && CLASSES[sel]) {
+    const cl = CLASSES[sel];
+    const sc = cl.spellcasting ? `caster (${cl.spellcasting.ability})` : 'non-caster';
+    info.innerHTML = `<strong>${cl.name}</strong>: hit die ${cl.hit_die}, saves: ${cl.saving_throw_profs.join(' / ')}, ${sc}`;
+    const hd = document.querySelector('input[name="hit_die"]');
+    if (hd && (!hd.value || hd.value === 'd8')) hd.value = cl.hit_die;
+    if (cl.spellcasting) {
+      const ab = document.querySelector('select[name="spellcasting_ability"]');
+      if (ab && !ab.value) ab.value = cl.spellcasting.ability;
+    }
+  } else {
+    info.innerHTML = '';
+  }
+}
+
+function onBgChange() {
+  const sel = document.getElementById('bg-select').value;
+  const info = document.getElementById('bg-info');
+  const bg = BACKGROUNDS.find(b => b.key === sel);
+  if (bg) {
+    info.innerHTML = `<strong>${bg.name}</strong>: skills ${bg.skill_profs.join(', ')}; feature: ${bg.feature.name}`;
+  } else {
+    info.innerHTML = '';
+  }
+}
+
+const FULL_TABLE = {
+  1: {1:2}, 2: {1:3}, 3: {1:4,2:2}, 4: {1:4,2:3}, 5: {1:4,2:3,3:2}, 6: {1:4,2:3,3:3},
+  7: {1:4,2:3,3:3,4:1}, 8: {1:4,2:3,3:3,4:2}, 9: {1:4,2:3,3:3,4:3,5:1}, 10: {1:4,2:3,3:3,4:3,5:2},
+  11: {1:4,2:3,3:3,4:3,5:2,6:1}, 12: {1:4,2:3,3:3,4:3,5:2,6:1},
+  13: {1:4,2:3,3:3,4:3,5:2,6:1,7:1}, 14: {1:4,2:3,3:3,4:3,5:2,6:1,7:1},
+  15: {1:4,2:3,3:3,4:3,5:2,6:1,7:1,8:1}, 16: {1:4,2:3,3:3,4:3,5:2,6:1,7:1,8:1},
+  17: {1:4,2:3,3:3,4:3,5:2,6:1,7:1,8:1,9:1}, 18: {1:4,2:3,3:3,4:3,5:3,6:1,7:1,8:1,9:1},
+  19: {1:4,2:3,3:3,4:3,5:3,6:2,7:1,8:1,9:1}, 20: {1:4,2:3,3:3,4:3,5:3,6:2,7:2,8:1,9:1}
+};
+const HALF_TABLE = {
+  2: {1:2}, 3: {1:3}, 4: {1:3}, 5: {1:4,2:2}, 6: {1:4,2:2}, 7: {1:4,2:3}, 8: {1:4,2:3},
+  9: {1:4,2:3,3:2}, 10: {1:4,2:3,3:2}, 11: {1:4,2:3,3:3}, 12: {1:4,2:3,3:3},
+  13: {1:4,2:3,3:3,4:1}, 14: {1:4,2:3,3:3,4:1}, 15: {1:4,2:3,3:3,4:2}, 16: {1:4,2:3,3:3,4:2},
+  17: {1:4,2:3,3:3,4:3,5:1}, 18: {1:4,2:3,3:3,4:3,5:1}, 19: {1:4,2:3,3:3,4:3,5:2}, 20: {1:4,2:3,3:3,4:3,5:2}
+};
+const WARLOCK = {1:[1,1],2:[1,2],3:[2,2],4:[2,2],5:[3,2],6:[3,2],7:[4,2],8:[4,2],9:[5,2],10:[5,2],11:[5,3],12:[5,3],13:[5,3],14:[5,3],15:[5,3],16:[5,3],17:[5,4],18:[5,4],19:[5,4],20:[5,4]};
+
+function autofillSlots() {
+  const cls = document.getElementById('class-select').value;
+  const lvl = parseInt(document.querySelector('input[name="level"]').value) || 1;
+  if (!cls || !CLASSES[cls] || !CLASSES[cls].spellcasting) {
+    alert('class is not a spellcaster');
+    return;
+  }
+  const table = CLASSES[cls].spellcasting.table;
+  let slots = {};
+  if (table === 'full') slots = FULL_TABLE[lvl] || {};
+  else if (table === 'half') slots = HALF_TABLE[lvl] || {};
+  else if (table === 'warlock') {
+    const [sl, n] = WARLOCK[lvl] || [1, 1];
+    slots = {[sl]: n};
+  }
+  for (let i = 1; i <= 9; i++) {
+    const inp = document.querySelector(`input[name="slot_max_${i}"]`);
+    if (inp) inp.value = slots[i] || 0;
+  }
+}
+
+document.addEventListener('DOMContentLoaded', () => {
+  recalc();
+  if (document.getElementById('race-select').value) {
+    populateSubrace(document.getElementById('race-select').value, initialSubrace);
+    onRaceChange();
+    if (initialSubrace) document.getElementById('subrace-select').value = initialSubrace;
+  }
+  onClassChange();
+  onBgChange();
+});
+</script>
+{% endblock %}

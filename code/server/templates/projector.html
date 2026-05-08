@@ -1,0 +1,299 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>projector</title>
+  <style>
+    /* Rear-projection: keep the image PRIMARILY BRIGHT so the projector emits enough light. */
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    html, body { width: 100%; height: 100%; background: #f5f5f0; color: #111; font-family: 'Inter', system-ui, sans-serif; overflow: hidden; }
+    #stage { position: relative; width: 100vw; height: 100vh; display: flex; align-items: center; justify-content: center; background: #f5f5f0; }
+    #waiting { color: #555; font-size: 1.5em; }
+    #map-wrap { position: relative; background: #ffffff; }
+    canvas, .layer { position: absolute; top: 0; left: 0; }
+    .token {
+      position: absolute;
+      display: flex; align-items: center; justify-content: center;
+      border-radius: 50%;
+      color: #fff;
+      font-weight: 800;
+      box-shadow: 0 0 0 3px #1a1a1a, 0 2px 6px rgba(0,0,0,0.4);
+      font-size: 1em;
+      letter-spacing: 0.02em;
+      transition: left 0.25s ease, top 0.25s ease;
+    }
+    .token.pc { background: #1879c4; }       /* strong blue */
+    .token.enemy { background: #c92020; }    /* strong red */
+    .token.current { box-shadow: 0 0 0 4px #d4a017, 0 0 18px rgba(212, 160, 23, 0.7); }
+    .token.dead { opacity: 0.45; filter: grayscale(1); }
+    #status-bar {
+      position: fixed; top: 16px; left: 16px;
+      background: rgba(255,255,255,0.92); padding: 10px 16px; border-radius: 8px;
+      border: 2px solid #1a1a1a;
+      font-size: 1.1em; color: #111;
+      font-weight: 600;
+    }
+    #status-bar .round { color: #b8770f; }
+    #status-bar .turn { color: #1a6b5d; }
+  </style>
+</head>
+<body>
+<div id="stage">
+  <div id="waiting">no map active. DM, set a battle map.</div>
+  <div id="map-wrap" style="display:none">
+  </div>
+</div>
+<div id="status-bar" style="display:none">
+  <span class="round">round —</span> · current: <span class="turn">—</span>
+</div>
+
+<script>
+const SESSION_ID = {{ session_id }};
+const PERSPECTIVE = 'party';  // projector = party perspective (vision-filtered)
+let SQUARE_PX = 50;
+let cols = 0, rows = 0;
+
+// High-contrast colors for projection. Avoid pure black; favor saturated bright tints.
+const ZONE_COLORS = {
+  bright: 'rgba(255, 230, 120, 0.30)',   // warm yellow
+  dim: 'rgba(140, 150, 180, 0.35)',      // cool blue-grey (lighter)
+  dark: 'rgba(80, 80, 100, 0.45)',       // dim grey-blue (still readable)
+  magical_dark: 'rgba(140, 60, 200, 0.55)',  // saturated purple
+  difficult: 'rgba(200, 140, 80, 0.40)', // warm tan
+  water: 'rgba(80, 170, 230, 0.50)',     // saturated blue
+};
+
+async function fetchState() {
+  try {
+    const res = await fetch(`/sessions/${SESSION_ID}/state?perspective=${PERSPECTIVE}`);
+    if (!res.ok) return null;
+    return await res.json();
+  } catch (e) { return null; }
+}
+
+function fitToWindow(state) {
+  cols = state.map.grid_cols;
+  rows = state.map.grid_rows;
+  const margin = 20;
+  const availW = window.innerWidth - margin;
+  const availH = window.innerHeight - margin;
+  if (state.map.image_path) {
+    return new Promise(resolve => {
+      const img = new Image();
+      img.onload = () => {
+        const scale = Math.min(availW / (cols), availH / (rows));
+        SQUARE_PX = scale;
+        resolve({ w: cols * SQUARE_PX, h: rows * SQUARE_PX, src: state.map.image_path });
+      };
+      img.onerror = () => resolve({ w: cols * Math.min(availW/cols, availH/rows), h: rows * Math.min(availW/cols, availH/rows), src: null });
+      img.src = state.map.image_path;
+    });
+  }
+  SQUARE_PX = Math.min(availW / cols, availH / rows);
+  return Promise.resolve({ w: cols * SQUARE_PX, h: rows * SQUARE_PX, src: null });
+}
+
+function drawZones(canvas, state) {
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  for (const z of (state.map.zones || [])) {
+    ctx.fillStyle = ZONE_COLORS[z.type] || 'rgba(255,255,255,0.05)';
+    if (z.shape === 'circle') {
+      ctx.beginPath();
+      ctx.arc(z.cx*SQUARE_PX, z.cy*SQUARE_PX, z.r*SQUARE_PX, 0, Math.PI*2);
+      ctx.fill();
+    } else {
+      ctx.fillRect(z.x*SQUARE_PX, z.y*SQUARE_PX, z.w*SQUARE_PX, z.h*SQUARE_PX);
+    }
+  }
+}
+
+function drawGrid(canvas, state) {
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.strokeStyle = 'rgba(40, 40, 50, 0.55)';
+  ctx.lineWidth = 1;
+  const gridType = state?.map?.grid_type || 'square';
+  if (gridType === 'hex') {
+    drawHexGrid(ctx, cols, rows, SQUARE_PX);
+  } else {
+    for (let x = 0; x <= cols; x++) { ctx.beginPath(); ctx.moveTo(x*SQUARE_PX, 0); ctx.lineTo(x*SQUARE_PX, rows*SQUARE_PX); ctx.stroke(); }
+    for (let y = 0; y <= rows; y++) { ctx.beginPath(); ctx.moveTo(0, y*SQUARE_PX); ctx.lineTo(cols*SQUARE_PX, y*SQUARE_PX); ctx.stroke(); }
+  }
+}
+
+function drawHexGrid(ctx, cols, rows, sq) {
+  // Pointy-top hex with offset rows. size = sq/2, hex_height = 2*size = sq, hex_width = sqrt(3)*size.
+  const size = sq / 2;
+  const hexW = Math.sqrt(3) * size;
+  const hexH = 2 * size;
+  const vSpacing = hexH * 0.75;
+  for (let r = 0; r < rows; r++) {
+    for (let c = 0; c < cols; c++) {
+      const cx = c * hexW + hexW/2 + (r % 2) * hexW/2;
+      const cy = r * vSpacing + size;
+      ctx.beginPath();
+      for (let i = 0; i < 6; i++) {
+        const a = Math.PI/2 + i * Math.PI/3;
+        const px = cx + size * Math.cos(a);
+        const py = cy + size * Math.sin(a);
+        if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+      }
+      ctx.closePath();
+      ctx.stroke();
+    }
+  }
+}
+
+function drawFogAndVision(canvas, state) {
+  const ctx = canvas.getContext('2d');
+  canvas.width = cols*SQUARE_PX; canvas.height = rows*SQUARE_PX;
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  const explored = new Set((state.fog_revealed || []).map(([x,y]) => `${x},${y}`));
+  const visible = new Set((state.currently_visible || []).map(([x,y]) => `${x},${y}`));
+  // Rear projection wants the image to remain primarily bright.
+  //   currently visible -> no overlay (white/map shows through)
+  //   explored only     -> medium grey overlay (cool, dim memory)
+  //   never seen        -> dark grey overlay (NOT pure black, so the projector still emits light)
+  for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+    const key = `${x},${y}`;
+    if (visible.has(key)) continue;
+    if (explored.has(key)) {
+      ctx.fillStyle = 'rgba(120, 125, 140, 0.55)';  // medium grey, slight cool tint
+    } else {
+      ctx.fillStyle = 'rgba(60, 65, 80, 0.85)';     // dark grey, never pure black
+    }
+    ctx.fillRect(x*SQUARE_PX, y*SQUARE_PX, SQUARE_PX, SQUARE_PX);
+  }
+}
+
+function drawWalls(canvas, state) {
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.strokeStyle = '#1a1a1a';
+  ctx.lineWidth = Math.max(3, SQUARE_PX*0.15);
+  ctx.lineCap = 'round';
+  for (const w of (state.map.walls || [])) {
+    ctx.beginPath();
+    ctx.moveTo(w.x1*SQUARE_PX, w.y1*SQUARE_PX);
+    ctx.lineTo(w.x2*SQUARE_PX, w.y2*SQUARE_PX);
+    ctx.stroke();
+  }
+}
+
+function drawVisionCircles(canvas, state) {
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  for (const v of (state.vision_circles || [])) {
+    if (v.x === null || v.x === undefined) continue;
+    const cx = (v.x + 0.5) * SQUARE_PX;
+    const cy = (v.y + 0.5) * SQUARE_PX;
+    const SQUARE_FT = 5;
+    const ranges = [
+      { ft: v.light_emission_ft, fill: 'rgba(255, 200, 80, 0.18)', stroke: 'rgba(220,150,30,0.7)' },
+      { ft: v.darkvision_ft, fill: 'rgba(60, 120, 220, 0.10)', stroke: 'rgba(40,90,180,0.55)' },
+    ];
+    for (const r of ranges) {
+      if (!r.ft) continue;
+      const radPx = (r.ft / SQUARE_FT) * SQUARE_PX;
+      ctx.fillStyle = r.fill;
+      ctx.beginPath(); ctx.arc(cx, cy, radPx, 0, Math.PI*2); ctx.fill();
+      ctx.strokeStyle = r.stroke;
+      ctx.lineWidth = 1.5;
+      ctx.beginPath(); ctx.arc(cx, cy, radPx, 0, Math.PI*2); ctx.stroke();
+    }
+  }
+}
+
+function renderTokens(layer, state) {
+  layer.innerHTML = '';
+  for (const lc of state.live_characters) {
+    if (lc.x === null || lc.x === undefined) continue;
+    const t = document.createElement('div');
+    t.className = 'token ' + (lc.is_enemy ? 'enemy' : 'pc') + (lc.is_current ? ' current' : '');
+    const size = Math.max(20, SQUARE_PX * 0.85);
+    t.style.width = size + 'px';
+    t.style.height = size + 'px';
+    t.style.left = (lc.x * SQUARE_PX + (SQUARE_PX - size) / 2) + 'px';
+    t.style.top = (lc.y * SQUARE_PX + (SQUARE_PX - size) / 2) + 'px';
+    t.title = lc.name;
+    t.textContent = lc.name.slice(0, 2).toUpperCase();
+    if (lc.current_hp !== undefined && lc.current_hp <= 0) t.classList.add('dead');
+    layer.appendChild(t);
+  }
+}
+
+function makeCanvas(parent, id, w, h) {
+  const c = document.createElement('canvas');
+  c.id = id; c.width = w; c.height = h;
+  c.style.position = 'absolute'; c.style.top = '0'; c.style.left = '0';
+  parent.appendChild(c);
+  return c;
+}
+
+async function render() {
+  const state = await fetchState();
+  if (!state) return;
+  if (!state.map) {
+    document.getElementById('waiting').style.display = '';
+    document.getElementById('map-wrap').style.display = 'none';
+    document.getElementById('status-bar').style.display = 'none';
+    return;
+  }
+  document.getElementById('waiting').style.display = 'none';
+  const wrap = document.getElementById('map-wrap');
+  wrap.style.display = '';
+  wrap.innerHTML = '';
+
+  const dims = await fitToWindow(state);
+  wrap.style.width = dims.w + 'px';
+  wrap.style.height = dims.h + 'px';
+
+  if (dims.src) {
+    const im = document.createElement('img');
+    im.src = dims.src; im.style.width = dims.w + 'px'; im.style.height = dims.h + 'px';
+    im.style.position = 'absolute'; im.style.top = '0'; im.style.left = '0';
+    im.draggable = false;
+    wrap.appendChild(im);
+  } else {
+    wrap.style.background = '#ffffff';
+  }
+
+  const zoneCanvas = makeCanvas(wrap, 'zone-canvas', dims.w, dims.h);
+  const visionCanvas = makeCanvas(wrap, 'vision-canvas', dims.w, dims.h);
+  const wallCanvas = makeCanvas(wrap, 'wall-canvas', dims.w, dims.h);
+  const fogCanvas = makeCanvas(wrap, 'fog-canvas', dims.w, dims.h);
+  const gridCanvas = makeCanvas(wrap, 'grid-canvas', dims.w, dims.h);
+
+  const tokenLayer = document.createElement('div');
+  tokenLayer.id = 'token-layer';
+  tokenLayer.className = 'layer';
+  tokenLayer.style.width = dims.w + 'px'; tokenLayer.style.height = dims.h + 'px';
+  wrap.appendChild(tokenLayer);
+
+  drawZones(zoneCanvas, state);
+  drawVisionCircles(visionCanvas, state);
+  drawWalls(wallCanvas, state);
+  drawFogAndVision(fogCanvas, state);
+  drawGrid(gridCanvas, state);
+  renderTokens(tokenLayer, state);
+
+  document.getElementById('status-bar').style.display = state.in_combat ? '' : 'none';
+  if (state.in_combat) {
+    document.querySelector('#status-bar .round').textContent = `round ${state.round_number}`;
+    const cur = state.live_characters.find(c => c.is_current);
+    document.querySelector('#status-bar .turn').textContent = cur ? cur.name : '—';
+  }
+}
+
+function connectSSE() {
+  const es = new EventSource(`/sessions/${SESSION_ID}/events`);
+  es.addEventListener('state_changed', () => render());
+  es.onerror = () => { setTimeout(connectSSE, 2000); es.close(); };
+}
+
+window.addEventListener('resize', () => render());
+render();
+connectSSE();
+</script>
+</body>
+</html>
