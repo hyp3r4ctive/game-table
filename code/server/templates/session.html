@@ -238,6 +238,10 @@
       <form method="post" action="/sessions/{{ gs.id }}/long-rest" style="display:inline" onsubmit="return confirm('Long rest? Restores HP and spell slots for all PCs.');">
         <button type="submit" class="secondary">long rest</button>
       </form>
+      <form method="post" action="/sessions/{{ gs.id }}/short-rest" style="display:inline" onsubmit="return confirm('Short rest — each PC spends 1 hit die.');">
+        <input type="hidden" name="dice_per_pc" value="1">
+        <button type="submit" class="secondary">short rest</button>
+      </form>
     {% else %}
       <form method="post" action="/sessions/{{ gs.id }}/combat/next-turn" style="display:inline">
         <button type="submit">next turn</button>
@@ -290,6 +294,7 @@
           {% if lc.conditions %}
             <span class="conditions">{% for c in lc.conditions %}{{ c.name }}{% if not loop.last %}, {% endif %}{% endfor %}</span>
           {% endif %}
+          {% if lc.exhaustion_level %}<span class="pill warn">exhaustion {{ lc.exhaustion_level }}/6</span>{% endif %}
         </div>
         {% if not lc.is_enemy and lc.current_hp <= 0 %}
         <div class="row" style="gap:6px; margin-top:6px">
@@ -349,6 +354,8 @@
             <label>darkvision <input type="number" name="darkvision_ft" value="{{ lc.darkvision_ft or 0 }}" style="width:55px; margin:0"></label>
             <label>vision <input type="number" name="vision_normal_ft" value="{{ lc.vision_normal_ft or 0 }}" style="width:55px; margin:0"></label>
             <label>light <input type="number" name="light_emission_ft" value="{{ lc.light_emission_ft or 0 }}" style="width:55px; margin:0"></label>
+            <label>level <input type="number" name="level" value="{{ lc.level or 1 }}" min="1" max="20" style="width:55px; margin:0"></label>
+            <label>exhaustion <input type="number" name="exhaustion_level" value="{{ lc.exhaustion_level or 0 }}" min="0" max="6" style="width:55px; margin:0"></label>
           </div>
           <div class="row" style="gap:6px; flex-wrap:wrap">
             <label style="flex:1; min-width:240px">resist <input type="text" name="damage_resistances" value="{{ lc.damage_resistances|join(',') if lc.damage_resistances else '' }}" placeholder="fire, cold, ..." style="width:100%; margin:0"></label>
@@ -447,6 +454,9 @@
               <option value="three_quarters">3/4 (+5 AC)</option>
               <option value="full">full (no shot)</option>
             </select>
+          </label>
+          <label style="display:inline-flex; align-items:center; gap:4px; margin:0; color:var(--text-faint); font-size:0.82em" title="Off-hand light-weapon attack: consumes bonus action instead of action. Drop the +ability mod from damage_dice unless you have Two-Weapon Fighting style.">
+            <input type="checkbox" name="off_hand" value="true"> off-hand (BA)
           </label>
           <button type="submit" class="small">attack</button>
         </form>
@@ -715,6 +725,16 @@
     <label>DEX</label><input type="number" name="dexterity" value="14">
     <button type="submit" class="small">spawn</button>
   </form>
+  {% if objects_catalog %}
+  <form method="post" action="/sessions/{{ gs.id }}/spawn-object" class="inline-form" style="margin-top:8px">
+    <span class="meta">object:</span>
+    <select name="object_key" style="min-width:180px">
+      {% for o in objects_catalog %}<option value="{{ o.key }}">{{ o.name }} (AC {{ o.armor_class }}, HP {{ o.max_hp }})</option>{% endfor %}
+    </select>
+    <label>name (optional)</label><input type="text" name="custom_name" placeholder="leave blank for default" style="width:140px">
+    <button type="submit" class="small">spawn object</button>
+  </form>
+  {% endif %}
 </div>
 
 <div class="panel">

@@ -1,0 +1,62 @@
+{
+  "wooden_door": {
+    "name": "Wooden Door", "armor_class": 15, "max_hp": 10,
+    "damage_immunities": ["poison", "psychic"],
+    "damage_vulnerabilities": [],
+    "notes": "Locked: thieves' tools DC 15 to pick. Force open: STR DC 15."
+  },
+  "iron_door": {
+    "name": "Iron Door", "armor_class": 19, "max_hp": 18,
+    "damage_immunities": ["poison", "psychic"],
+    "damage_vulnerabilities": [],
+    "notes": "Force open: STR DC 25. Most weapons can't dent it."
+  },
+  "wooden_chest": {
+    "name": "Wooden Chest", "armor_class": 15, "max_hp": 10,
+    "damage_immunities": ["poison", "psychic"],
+    "damage_vulnerabilities": [],
+    "notes": "Locked: thieves' tools DC 12. Trapped chests: DM resolves traps."
+  },
+  "iron_chest": {
+    "name": "Iron Chest", "armor_class": 19, "max_hp": 27,
+    "damage_immunities": ["poison", "psychic"],
+    "damage_vulnerabilities": [],
+    "notes": "Locked: thieves' tools DC 17."
+  },
+  "statue": {
+    "name": "Stone Statue", "armor_class": 17, "max_hp": 27,
+    "damage_immunities": ["poison", "psychic"],
+    "damage_vulnerabilities": ["bludgeoning"],
+    "notes": "Heavy. Falling on a creature: 2d10 bludgeoning, DEX save DC 13 for half."
+  },
+  "glass_window": {
+    "name": "Glass Window", "armor_class": 13, "max_hp": 1,
+    "damage_immunities": ["poison", "psychic"],
+    "damage_vulnerabilities": ["bludgeoning"],
+    "notes": "Shatters loudly. Creatures in 5ft of broken glass take 1 slashing per square moved (barefoot)."
+  },
+  "wooden_wall": {
+    "name": "Wooden Wall (5ft section)", "armor_class": 15, "max_hp": 60,
+    "damage_immunities": ["poison", "psychic"],
+    "damage_vulnerabilities": [],
+    "notes": "Reduces sight + projectiles. Loud when breached."
+  },
+  "brick_wall": {
+    "name": "Brick Wall (5ft section)", "armor_class": 15, "max_hp": 90,
+    "damage_immunities": ["poison", "psychic"],
+    "damage_vulnerabilities": [],
+    "notes": "Solid. Resistant to most weapons; magic and siege weapons are best."
+  },
+  "heavy_crate": {
+    "name": "Heavy Crate", "armor_class": 15, "max_hp": 18,
+    "damage_immunities": ["poison", "psychic"],
+    "damage_vulnerabilities": [],
+    "notes": "Counts as half cover. Difficult terrain when broken."
+  },
+  "barrel": {
+    "name": "Barrel", "armor_class": 13, "max_hp": 5,
+    "damage_immunities": ["poison", "psychic"],
+    "damage_vulnerabilities": [],
+    "notes": "Cheap rolling cover. Often holds ale, oil, or pickled fish."
+  }
+}

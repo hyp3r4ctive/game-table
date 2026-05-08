@@ -239,6 +239,10 @@ class LiveCharacter(SQLModel, table=True):
     attacks_remaining_this_action: int = 0
     sneak_attack_dice: int = 0
     sneak_attack_used_this_turn: bool = False
+    exhaustion_level: int = 0
+    hit_dice_used: int = 0
+    hit_die: str = "d8"
+    is_inspired: bool = False
     class_features: list = Field(default_factory=list, sa_column=Column(JSON))
 
 

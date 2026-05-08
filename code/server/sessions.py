@@ -101,10 +101,22 @@ def _reset_turn_state(gs: GameSession) -> None:
 
 
 def _movement_budget_ft(db_session: Session, gs: GameSession, lc: LiveCharacter) -> int:
-    """Total feet of movement allowed this turn = base speed + active-effect modifiers + turn extras (Dash)."""
+    """Total feet of movement allowed this turn = base speed + active-effect modifiers + turn extras (Dash).
+    Conditions clamp speed (grappled/restrained/paralyzed/stunned/unconscious/petrified → 0;
+    exhaustion 2-4 halves; exhaustion 5+ → 0).
+    """
     base = lc.speed_ft or 30
     delta = 0
     multiplier = 1.0
+    cond_names = _all_condition_names(lc)
+    # Hard speed-zero conditions trump everything else.
+    if any(n in cond_names for n in (
+        "grappled", "restrained", "paralyzed", "stunned", "unconscious", "petrified",
+        "exhaustion_5", "exhaustion_6",
+    )):
+        return 0
+    if any(n in cond_names for n in ("exhaustion_2", "exhaustion_3", "exhaustion_4")):
+        multiplier *= 0.5
     try:
         from db import ActiveEffect
         effects = db_session.exec(
@@ -968,6 +980,22 @@ def _campaign_bypass(db_session: Session, gs: GameSession) -> set[str]:
     return {r for r in RULES if not rules.get(r, True)}
 
 
+def _all_condition_names(lc: LiveCharacter) -> list[str]:
+    """Combined list of condition names + auto-derived exhaustion tier."""
+    names = [c["name"] for c in (lc.conditions or [])]
+    lvl = int(getattr(lc, "exhaustion_level", 0) or 0)
+    if lvl > 0:
+        names.append(f"exhaustion_{min(lvl, 6)}")
+    return names
+
+
+_INCAPACITATING_CONDITIONS = {"incapacitated", "paralyzed", "stunned", "unconscious", "petrified"}
+
+
+def _is_incapacitated(lc: LiveCharacter) -> bool:
+    return any(n in _INCAPACITATING_CONDITIONS for n in _all_condition_names(lc))
+
+
 def _consume_attack_action(db_session: Session, gs: GameSession, lc: LiveCharacter) -> list[str]:
     """Action economy for attacks. Multi-attack-aware: the first attack of a turn
     consumes the Action and seeds `attacks_remaining_this_action` from the LC's
@@ -1241,6 +1269,8 @@ def start_session(
             melee_reach_ft=getattr(char, "melee_reach_ft", 5) or 5,
             attacks_per_action=getattr(char, "attacks_per_action", 1) or 1,
             sneak_attack_dice=getattr(char, "sneak_attack_dice", 0) or 0,
+            hit_die=(getattr(char, "hit_die", "d8") or "d8"),
+            hit_dice_used=getattr(char, "hit_dice_used", 0) or 0,
             position_x=2 + i,
             position_y=2,
             darkvision_ft=getattr(char, "darkvision_ft", 0) or 0,
@@ -1286,6 +1316,57 @@ def unpush_session_from_table(
     db.commit()
     events.publish(session_id)
     return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+
+
+@router.post("/sessions/{session_id}/short-rest")
+def short_rest(
+    session_id: int,
+    dice_per_pc: int = Form(1),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """DM triggers a short rest. Each PC spends up to dice_per_pc hit dice;
+    each die heals (rolled die + CON mod). Warlocks recover spell slots
+    (class_features contains 'warlock_pact_magic').
+    """
+    gs = _require_session(db, session_id, user, dm_only=True)
+    if gs.in_combat:
+        raise HTTPException(400, "cannot short rest during combat")
+    pcs = db.exec(
+        select(LiveCharacter).where(
+            LiveCharacter.session_id == session_id,
+            LiveCharacter.is_active == True,
+            LiveCharacter.is_enemy == False,
+        )
+    ).all()
+    _push_undo(db, gs, "short rest")
+    _log(db, gs, f"Short rest ({dice_per_pc} hit dice each)")
+    for lc in pcs:
+        if lc.is_dead:
+            continue
+        max_dice = lc.level or 1
+        remaining = max(0, max_dice - (lc.hit_dice_used or 0))
+        spend = min(dice_per_pc, remaining)
+        if spend <= 0:
+            _log(db, gs, f"  {lc.name}: no hit dice remaining")
+            continue
+        con_mod = ((lc.constitution or 10) - 10) // 2
+        die = lc.hit_die or "d8"
+        try:
+            rolled = dice.roll(f"{spend}{die}")
+        except Exception:
+            rolled = dice.roll(f"{spend}d8")
+        healed_total = rolled.total + con_mod * spend
+        gained = _heal_to(db, gs, lc, max(0, healed_total))
+        lc.hit_dice_used = (lc.hit_dice_used or 0) + spend
+        if "warlock_pact_magic" in (lc.class_features or []):
+            lc.spell_slots = _default_spell_slots(lc.level or 1)
+            _log(db, gs, f"  {lc.name}: pact magic slots restored")
+        db.add(lc)
+        _log(db, gs, f"  {lc.name}: spent {spend}{die} ({rolled.total}+{con_mod*spend} CON), healed {gained} (HP {lc.current_hp}/{lc.max_hp})")
+    db.commit()
+    events.publish(session_id)
+    return {"ok": True}
 
 
 @router.post("/sessions/{session_id}/long-rest")
@@ -1391,6 +1472,19 @@ def view_session(
     active_map = db.get(Map, gs.active_map_id) if gs.active_map_id else None
     from game.monsters import list_monsters
     monsters_list = list_monsters() if is_dm else []
+    # Objects catalog for the spawn-object form.
+    objects_list: list = []
+    if is_dm:
+        try:
+            import json as _j
+            from pathlib import Path as _P
+            obj_data = _j.loads((_P(__file__).parent / "data" / "objects.json").read_text())
+            objects_list = sorted(
+                ({"key": k, **v} for k, v in obj_data.items()),
+                key=lambda o: o.get("name", "")
+            )
+        except Exception:
+            objects_list = []
     all_effs = _all_active_effects_for_session(db, gs.id)
     effects_by_target: dict = {}
     for eff in all_effs:
@@ -1429,6 +1523,7 @@ def view_session(
         "casting_mods_by_lc": casting_mods_by_lc,
         "concentration_by_lc": concentration_by_lc,
         "monsters": monsters_list,
+        "objects_catalog": objects_list,
     })
 
 
@@ -1669,6 +1764,10 @@ def _maybe_roll_fumble(db_session: Session, gs: GameSession, attacker: LiveChara
 def _do_attack(db_session: Session, gs: GameSession, params: dict, user: User, bypass: set[str]) -> None:
     attacker = _require_live(db_session, gs.id, int(params["attacker_id"]))
     target = _require_live(db_session, gs.id, int(params["target_id"]))
+    if _is_incapacitated(attacker):
+        cond_list = ", ".join(n for n in _all_condition_names(attacker) if n in _INCAPACITATING_CONDITIONS)
+        _log(db_session, gs, f"{attacker.name} is incapacitated ({cond_list}) — attack denied")
+        return
     _push_undo(db_session, gs, f"{attacker.name} attacks {target.name}")
     cover = (params.get("cover") or "none").lower()
     # Auto-detect when caller didn't override (cover == "none").
@@ -1683,8 +1782,11 @@ def _do_attack(db_session: Session, gs: GameSession, params: dict, user: User, b
     flags = _validate_attack(db_session, gs, attacker, target, effective_bypass, distance_ft=int(params.get("distance_ft", 5)))
     # Action economy: first attack of the turn consumes Action and seeds the
     # multi-attack counter; follow-up attacks just decrement. _consume_attack_action
-    # handles both branches.
-    flags = flags + _consume_attack_action(db_session, gs, attacker)
+    # handles both branches. Two-weapon off-hand attacks consume Bonus Action instead.
+    if params.get("off_hand"):
+        flags = flags + _consume_turn_resource(db_session, gs, attacker, "bonus_action")
+    else:
+        flags = flags + _consume_attack_action(db_session, gs, attacker)
     if flags:
         if _is_pc_action(attacker):
             summary = f"{attacker.name} attacks {target.name}"
@@ -1694,8 +1796,8 @@ def _do_attack(db_session: Session, gs: GameSession, params: dict, user: User, b
             return
         label = ", ".join(FLAG_LABELS.get(f, f) for f in flags)
         _log(db_session, gs, f"warning: {attacker.name} attacks {target.name}: {label}")
-    attacker_conds = [c["name"] for c in (attacker.conditions or [])]
-    target_conds = [c["name"] for c in (target.conditions or [])]
+    attacker_conds = _all_condition_names(attacker)
+    target_conds = _all_condition_names(target)
     mods = effects_mod.collect_attack_modifiers(db_session, gs.id, attacker.id, target.id)
     if mods.image_log:
         _log(db_session, gs, f"  {mods.image_log}")
@@ -1848,6 +1950,7 @@ def attack(
     sneak_attack: bool = Form(False),
     smite_slot_level: int = Form(0),
     cover: str = Form("none"),
+    off_hand: bool = Form(False),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ):
@@ -1858,8 +1961,164 @@ def attack(
         "to_hit_modifier": to_hit_modifier, "damage_dice": damage_dice,
         "damage_type": damage_type, "distance_ft": distance_ft,
         "sneak_attack": sneak_attack, "smite_slot_level": smite_slot_level,
-        "cover": cover,
+        "cover": cover, "off_hand": off_hand,
     }, user, bypass=set())
+    db.commit()
+    events.publish(session_id)
+    return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+
+
+def _athletics_acrobatics_contest_roll(db_session: Session, lc: LiveCharacter, allow_acrobatics: bool = True) -> tuple:
+    """Returns (roll_total, label) — best of Athletics or (optionally) Acrobatics."""
+    char = db_session.get(Character, lc.source_character_id) if lc.source_character_id else None
+    pb = _proficiency_bonus(lc.level or 1)
+    str_mod = ((lc.strength or 10) - 10) // 2
+    dex_mod = ((lc.dexterity or 10) - 10) // 2
+    a_bonus = pb if (char and "Athletics" in (char.skill_profs or [])) else 0
+    ac_bonus = pb if (char and "Acrobatics" in (char.skill_profs or [])) else 0
+    athletics_total_mod = str_mod + a_bonus
+    acrobatics_total_mod = dex_mod + ac_bonus
+    if allow_acrobatics and acrobatics_total_mod > athletics_total_mod:
+        roll = dice.roll_d20(acrobatics_total_mod)
+        return roll.total, "Acrobatics"
+    roll = dice.roll_d20(athletics_total_mod)
+    return roll.total, "Athletics"
+
+
+@router.post("/sessions/{session_id}/grapple")
+def grapple(
+    session_id: int,
+    attacker_id: int = Form(),
+    target_id: int = Form(),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    gs = _require_session(db, session_id, user)
+    attacker = _require_live(db, session_id, attacker_id)
+    target = _require_live(db, session_id, target_id)
+    if _is_incapacitated(attacker):
+        _log(db, gs, f"{attacker.name} can't grapple — incapacitated")
+        return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+    _push_undo(db, gs, f"{attacker.name} grapples {target.name}")
+    a_total, a_label = _athletics_acrobatics_contest_roll(db, attacker, allow_acrobatics=False)
+    t_total, t_label = _athletics_acrobatics_contest_roll(db, target, allow_acrobatics=True)
+    _log(db, gs, f"Grapple: {attacker.name} ({a_label}) {a_total} vs {target.name} ({t_label}) {t_total}")
+    if a_total > t_total:
+        existing = list(target.conditions or [])
+        if not any(c.get("name") == "grappled" for c in existing):
+            existing.append({"name": "grappled", "source_lc_id": attacker.id})
+            target.conditions = existing
+            db.add(target)
+        _log(db, gs, f"  {target.name} is grappled by {attacker.name}")
+    else:
+        _log(db, gs, f"  {target.name} resists the grapple")
+    db.commit()
+    events.publish(session_id)
+    return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+
+
+@router.post("/sessions/{session_id}/shove")
+def shove(
+    session_id: int,
+    attacker_id: int = Form(),
+    target_id: int = Form(),
+    mode: str = Form("prone"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    gs = _require_session(db, session_id, user)
+    attacker = _require_live(db, session_id, attacker_id)
+    target = _require_live(db, session_id, target_id)
+    if _is_incapacitated(attacker):
+        _log(db, gs, f"{attacker.name} can't shove — incapacitated")
+        return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+    _push_undo(db, gs, f"{attacker.name} shoves {target.name}")
+    a_total, a_label = _athletics_acrobatics_contest_roll(db, attacker, allow_acrobatics=False)
+    t_total, t_label = _athletics_acrobatics_contest_roll(db, target, allow_acrobatics=True)
+    _log(db, gs, f"Shove ({mode}): {attacker.name} ({a_label}) {a_total} vs {target.name} ({t_label}) {t_total}")
+    if a_total > t_total:
+        if mode == "prone":
+            existing = list(target.conditions or [])
+            if not any(c.get("name") == "prone" for c in existing):
+                existing.append({"name": "prone"})
+                target.conditions = existing
+                db.add(target)
+            _log(db, gs, f"  {target.name} knocked prone")
+        else:
+            if attacker.position_x is not None and target.position_x is not None:
+                dx = target.position_x - attacker.position_x
+                dy = target.position_y - attacker.position_y
+                mag = max(abs(dx), abs(dy)) or 1
+                step_x = dx // mag if dx else 0
+                step_y = dy // mag if dy else 0
+                target.position_x = (target.position_x or 0) + step_x
+                target.position_y = (target.position_y or 0) + step_y
+                db.add(target)
+                _log(db, gs, f"  {target.name} pushed 5ft to ({target.position_x}, {target.position_y})")
+            else:
+                _log(db, gs, f"  {target.name} pushed (positions unknown)")
+    else:
+        _log(db, gs, f"  {target.name} resists the shove")
+    db.commit()
+    events.publish(session_id)
+    return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+
+
+@router.post("/sessions/{session_id}/inspire")
+def toggle_inspiration(
+    session_id: int,
+    actor_id: int = Form(),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """DM-only: toggle inspiration on a PC. Use the spend_inspiration form param
+    on attack/save/check to consume it for advantage.
+    """
+    gs = _require_session(db, session_id, user, dm_only=True)
+    lc = _require_live(db, session_id, actor_id)
+    lc.is_inspired = not lc.is_inspired
+    db.add(lc)
+    _log(db, gs, f"{lc.name} {'GAINS' if lc.is_inspired else 'loses'} inspiration")
+    db.commit()
+    events.publish(session_id)
+    return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+
+
+@router.post("/sessions/{session_id}/skill-check")
+def skill_check(
+    session_id: int,
+    actor_id: int = Form(),
+    skill: str = Form(),
+    dc: int = Form(10),
+    advantage: bool = Form(False),
+    disadvantage: bool = Form(False),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """1d20 + ability_mod + (proficiency or expertise bonus) vs DC. Reads
+    skill_profs / skill_expertises from the source Character; LC stats drive ability mod.
+    """
+    import character_data as cd
+    gs = _require_session(db, session_id, user)
+    lc = _require_live(db, session_id, actor_id)
+    ability = cd.SKILLS.get(skill) or cd.SKILLS.get(skill.title())
+    if not ability:
+        raise HTTPException(400, f"unknown skill: {skill}")
+    score = getattr(lc, ability, 10)
+    mod = (score - 10) // 2
+    char = db.get(Character, lc.source_character_id) if lc.source_character_id else None
+    pb = _proficiency_bonus(lc.level or 1)
+    bonus = 0
+    if char:
+        if skill in (char.skill_expertises or []):
+            bonus = pb * 2
+        elif skill in (char.skill_profs or []):
+            bonus = pb
+    total_mod = mod + bonus
+    roll = dice.roll_d20(total_mod, advantage=advantage, disadvantage=disadvantage)
+    outcome = "PASS" if roll.total >= dc else "FAIL"
+    note = " adv" if advantage and not disadvantage else (" dis" if disadvantage and not advantage else "")
+    _log(db, gs, f"{lc.name} {skill} ({ability[:3]}) check{note}: {roll.total} vs DC {dc} ({outcome})")
     db.commit()
     events.publish(session_id)
     return RedirectResponse(f"/sessions/{session_id}", status_code=303)
@@ -1950,6 +2209,7 @@ async def edit_live_character(
         "strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma",
         "melee_reach_ft", "attacks_per_action", "sneak_attack_dice",
         "darkvision_ft", "vision_normal_ft", "light_emission_ft",
+        "exhaustion_level", "level",
     )
     for f in int_fields:
         v = form.get(f)
@@ -2092,6 +2352,10 @@ def cast(
 def _do_cast(db_session: Session, gs: GameSession, params: dict, user: User, bypass: set[str]) -> None:
     spell_name = params["spell_name"]
     caster = _require_live(db_session, gs.id, int(params["caster_id"]))
+    if _is_incapacitated(caster):
+        cond_list = ", ".join(n for n in _all_condition_names(caster) if n in _INCAPACITATING_CONDITIONS)
+        _log(db_session, gs, f"{caster.name} is incapacitated ({cond_list}) — cast denied")
+        return
     _push_undo(db_session, gs, f"{caster.name} casts {spell_name}")
     spell = spells.get_spell(spell_name, db_session, gs.campaign_id)
     if not spell:
@@ -2568,6 +2832,62 @@ def spawn_enemy(
     )
     db.add(lc)
     _log(db, gs, f"Enemy spawned: {name} (HP {max_hp}, AC {armor_class})")
+    db.commit()
+    events.publish(session_id)
+    return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+
+
+@router.post("/sessions/{session_id}/spawn-object")
+def spawn_object(
+    session_id: int,
+    object_key: str = Form(),
+    custom_name: str = Form(""),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """DM-only: spawn an inanimate object as a targetable LiveCharacter.
+    Marked is_active=False so it doesn't roll initiative; still attackable for HP/AC.
+    """
+    import json as _json
+    from pathlib import Path as _Path
+    gs = _require_session(db, session_id, user, dm_only=True)
+    catalog_path = _Path(__file__).parent / "data" / "objects.json"
+    try:
+        catalog = _json.loads(catalog_path.read_text())
+    except FileNotFoundError:
+        raise HTTPException(500, "objects catalog missing")
+    obj = catalog.get(object_key)
+    if not obj:
+        raise HTTPException(400, f"unknown object: {object_key}")
+    map_obj = db.get(Map, gs.active_map_id) if gs.active_map_id else None
+    cols = map_obj.grid_cols if map_obj else 60
+    enemy_count = len(db.exec(select(LiveCharacter).where(
+        LiveCharacter.session_id == session_id, LiveCharacter.is_enemy == True
+    )).all())
+    name = (custom_name or obj.get("name", object_key)).strip()
+    px = max(0, cols - 5 - enemy_count)
+    lc = LiveCharacter(
+        session_id=session_id,
+        owner_id=user.id,
+        name=name,
+        max_hp=obj["max_hp"],
+        current_hp=obj["max_hp"],
+        armor_class=obj["armor_class"],
+        speed_ft=0,
+        strength=10, dexterity=0, constitution=10,
+        intelligence=0, wisdom=0, charisma=0,
+        is_enemy=True,
+        is_active=False,  # excluded from initiative
+        position_x=px,
+        position_y=4,
+        damage_immunities=list(obj.get("damage_immunities", []) or []),
+        damage_vulnerabilities=list(obj.get("damage_vulnerabilities", []) or []),
+        damage_resistances=list(obj.get("damage_resistances", []) or []),
+    )
+    db.add(lc)
+    _log(db, gs, f"DM spawns {name} (AC {obj['armor_class']}, HP {obj['max_hp']})")
+    if obj.get("notes"):
+        _log(db, gs, f"  {obj['notes']}")
     db.commit()
     events.publish(session_id)
     return RedirectResponse(f"/sessions/{session_id}", status_code=303)
