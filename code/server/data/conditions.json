@@ -140,6 +140,14 @@
       "melee_attacks_within_5ft_auto_crit"
     ]
   },
+  "hidden": {
+    "name": "Hidden",
+    "description": "You can't be seen by creatures unaware of your position. Attacks against you have disadvantage; your attacks have advantage. Reveals when you attack, cast a spell, or are otherwise observed.",
+    "effects": [
+      "attacked_with_disadvantage",
+      "attack_rolls_have_advantage"
+    ]
+  },
   "exhaustion_1": {
     "name": "Exhaustion 1",
     "description": "Disadvantage on ability checks.",

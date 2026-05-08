@@ -1547,6 +1547,7 @@ def view_session(
             "id": eff.id, "name": eff.name, "description": eff.description,
             "is_concentration": eff.is_concentration, "duration_rounds": eff.duration_rounds,
             "handler_key": eff.handler_key, "caster_live_id": eff.caster_live_id,
+            "spell_key": eff.spell_key or "",
         })
     my_lc_ids = [lc.id for lc in lcs if lc.owner_id == user.id]
     # Per-LC spellcasting modifiers for cast form auto-fill (DC / +atk / +mod).
@@ -1974,6 +1975,11 @@ def _do_attack(db_session: Session, gs: GameSession, params: dict, user: User, b
     )
     if result.fumble:
         _maybe_roll_fumble(db_session, gs, attacker)
+    # Attacking reveals a hidden creature.
+    if any(c.get("name") == "hidden" for c in (attacker.conditions or [])):
+        attacker.conditions = [c for c in (attacker.conditions or []) if c.get("name") != "hidden"]
+        db_session.add(attacker)
+        _log(db_session, gs, f"  {attacker.name} reveals their position by attacking")
     if result.image_hit:
         _consume_mirror_image(db_session, gs, target)
         msg = result.description
@@ -2457,6 +2463,118 @@ def second_wind(
     if flags:
         _log(db, gs, f"  warning: {flags[0]}")
     _log(db, gs, f"{lc.name} uses Second Wind: heals {healed} (1d10={rolled.total} + level {lc.level or 1}). HP {lc.current_hp}/{lc.max_hp}")
+    db.commit()
+    events.publish(session_id)
+    return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+
+
+@router.post("/sessions/{session_id}/rage")
+def rage(
+    session_id: int,
+    actor_id: int = Form(),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Barbarian Rage: toggle on (consume use + apply effects) or off (remove).
+    Applies +2 damage on melee attacks (stat_buff) and resistance to bludgeoning/
+    piercing/slashing (damage_resistance). Lasts 1 minute (10 rounds), concentration-like.
+    """
+    from db import ActiveEffect
+    gs = _require_session(db, session_id, user)
+    lc = _require_live(db, session_id, actor_id)
+    if not _can_act(gs, lc, user):
+        raise HTTPException(403)
+    existing_rage = db.exec(
+        select(ActiveEffect).where(
+            ActiveEffect.session_id == session_id,
+            ActiveEffect.target_live_id == lc.id,
+            ActiveEffect.spell_key == "rage",
+        )
+    ).all()
+    if existing_rage:
+        ctx = effects_mod.EffectContext(db=db, session_id=session_id)
+        for e in existing_rage:
+            effects_mod.remove_effect(db, e, ctx)
+        _log(db, gs, f"{lc.name} ends Rage")
+        db.commit()
+        events.publish(session_id)
+        return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+    res = dict(lc.resources or {})
+    entry = dict(res.get("rage") or {"current": 2, "max": 2, "label": "Rage", "recharge": "long_rest"})
+    if entry.get("current", 0) <= 0:
+        raise HTTPException(400, "no Rage uses remaining")
+    entry["current"] -= 1
+    res["rage"] = entry
+    lc.resources = res
+    db.add(lc)
+    flags = _consume_turn_resource(db, gs, lc, "bonus_action")
+    if flags:
+        _log(db, gs, f"  warning: {flags[0]}")
+    # Rage damage scales: +2 levels 1-8, +3 levels 9-15, +4 level 16+.
+    rage_damage = 2 if (lc.level or 1) < 9 else (3 if (lc.level or 1) < 16 else 4)
+    buff_eff = ActiveEffect(
+        session_id=session_id, target_live_id=lc.id, caster_live_id=lc.id,
+        spell_key="rage", name="Rage (damage)",
+        description=f"+{rage_damage} damage on melee weapon attacks; advantage on STR checks/saves (manual).",
+        handler_key="stat_buff", is_concentration=False,
+        duration_rounds=10, duration_basis="caster_end_of_turn",
+        payload={"damage_bonus": rage_damage},
+    )
+    res_eff = ActiveEffect(
+        session_id=session_id, target_live_id=lc.id, caster_live_id=lc.id,
+        spell_key="rage", name="Rage (resistance)",
+        description="Resistance to bludgeoning, piercing, slashing.",
+        handler_key="damage_resistance", is_concentration=False,
+        duration_rounds=10, duration_basis="caster_end_of_turn",
+        payload={"types": ["bludgeoning", "piercing", "slashing"]},
+    )
+    db.add(buff_eff); db.add(res_eff)
+    db.flush()
+    rh = effects_mod.get_handler("damage_resistance")
+    if rh:
+        rh.on_apply(effects_mod.EffectContext(db=db, session_id=session_id), res_eff)
+    _log(db, gs, f"{lc.name} RAGES (+{rage_damage} dmg / B-P-S resistance, {entry['current']}/{entry['max']} uses left)")
+    db.commit()
+    events.publish(session_id)
+    return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+
+
+@router.post("/sessions/{session_id}/cunning-action")
+def cunning_action(
+    session_id: int,
+    actor_id: int = Form(),
+    action: str = Form(),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Rogue Cunning Action: Dash/Disengage/Hide as a bonus action."""
+    gs = _require_session(db, session_id, user)
+    lc = _require_live(db, session_id, actor_id)
+    if not _can_act(gs, lc, user):
+        raise HTTPException(403)
+    flags = _consume_turn_resource(db, gs, lc, "bonus_action")
+    if flags:
+        raise HTTPException(400, flags[0])
+    if action == "dash":
+        gs.movement_extra_ft = (gs.movement_extra_ft or 0) + (lc.speed_ft or 30)
+        _log(db, gs, f"{lc.name}: Cunning Action — Dash (+{lc.speed_ft or 30} ft movement)")
+    elif action == "disengage":
+        gs.is_disengaging = True
+        _log(db, gs, f"{lc.name}: Cunning Action — Disengage (no OAs this turn)")
+    elif action == "hide":
+        # Roll Stealth check, log result
+        from game import dice as _d
+        char = db.get(Character, lc.source_character_id) if lc.source_character_id else None
+        dex_mod = ((lc.dexterity or 10) - 10) // 2
+        pb = _proficiency_bonus(lc.level or 1)
+        bonus = pb if (char and "Stealth" in (char.skill_profs or [])) else 0
+        if char and "Stealth" in (char.skill_expertises or []):
+            bonus = pb * 2
+        roll = _d.roll_d20(dex_mod + bonus)
+        _log(db, gs, f"{lc.name}: Cunning Action — Hide. Stealth: {roll.total}")
+    else:
+        raise HTTPException(400, "action must be dash/disengage/hide")
+    db.add(gs)
     db.commit()
     events.publish(session_id)
     return RedirectResponse(f"/sessions/{session_id}", status_code=303)
@@ -3330,6 +3448,56 @@ def apply_item(
     return RedirectResponse(f"/sessions/{session_id}", status_code=303)
 
 
+@router.post("/sessions/{session_id}/generate-loot")
+def generate_loot(
+    session_id: int,
+    tier: int = Form(1),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Quick loot generator (DMG p.133 simplified). Tier 1 = CR 0-4, Tier 2 = 5-10,
+    Tier 3 = 11-16, Tier 4 = 17+. Logs gold + chance of magic item.
+    """
+    import random as _r
+    gs = _require_session(db, session_id, user, dm_only=True)
+    tier = max(1, min(int(tier), 4))
+    if tier == 1:
+        gp = dice.roll("4d6").total
+        sp = dice.roll("5d6").total * 10
+        item_chance = 0.05; rarity = "common"
+    elif tier == 2:
+        gp = dice.roll("4d6").total * 10
+        sp = dice.roll("1d10").total * 100
+        item_chance = 0.25; rarity = "uncommon"
+    elif tier == 3:
+        gp = dice.roll("1d4").total * 100
+        sp = dice.roll("2d6").total * 100
+        item_chance = 0.5; rarity = "rare"
+    else:
+        gp = dice.roll("4d6").total * 100
+        sp = dice.roll("3d10").total * 100
+        item_chance = 0.75; rarity = "very rare"
+    log_lines = [f"Loot tier {tier}: {gp} gp, {sp} sp"]
+    if _r.random() < item_chance:
+        try:
+            import json as _j
+            from pathlib import Path as _P
+            items = _j.loads((_P(__file__).parent / "data" / "items.json").read_text())
+            candidates = [(k, v) for k, v in items.items() if v.get("rarity") == rarity]
+            if not candidates:
+                candidates = list(items.items())
+            key, val = _r.choice(candidates)
+            log_lines.append(f"  + magic item: {val.get('name', key)} ({val.get('rarity', '?')})")
+            log_lines.append(f"    {val.get('description', '')}")
+        except Exception:
+            pass
+    for ln in log_lines:
+        _log(db, gs, ln)
+    db.commit()
+    events.publish(session_id)
+    return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+
+
 @router.post("/sessions/{session_id}/spawn-object")
 def spawn_object(
     session_id: int,
@@ -3940,8 +4108,21 @@ async def turn_action(
         _log(db, gs, f"{lc.name} disengages")
     elif action == "hide":
         mod = _ability_mod(lc.dexterity)
-        roll = dice.roll_d20(mod)
-        _log(db, gs, f"{lc.name} hides — stealth check: {roll.total} (DM resolves vs perception)")
+        char = db.get(Character, lc.source_character_id) if lc.source_character_id else None
+        pb = _proficiency_bonus(lc.level or 1)
+        bonus = 0
+        if char:
+            if "Stealth" in (char.skill_expertises or []):
+                bonus = pb * 2
+            elif "Stealth" in (char.skill_profs or []):
+                bonus = pb
+        roll = dice.roll_d20(mod + bonus)
+        existing = list(lc.conditions or [])
+        if not any(c.get("name") == "hidden" for c in existing):
+            existing.append({"name": "hidden", "stealth_total": roll.total})
+            lc.conditions = existing
+            db.add(lc)
+        _log(db, gs, f"{lc.name} hides — Stealth: {roll.total} (DM compares vs passive perception)")
     elif action == "help":
         target_id = body.get("target_id")
         target_name = "ally"

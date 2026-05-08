@@ -545,6 +545,42 @@
           <button type="submit" class="small">Second Wind</button>
         </form>
         {% endif %}
+        {% if 'rage' in (lc.class_features or []) %}
+        <form method="post" action="/sessions/{{ gs.id }}/rage" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <button type="submit" class="small">{% if lc.resources and lc.resources.get('rage') and lc.resources['rage'].get('current', 0) > 0 %}RAGE{% else %}end Rage{% endif %}</button>
+        </form>
+        {% endif %}
+        {% if 'cunning_action' in (lc.class_features or []) %}
+        <form method="post" action="/sessions/{{ gs.id }}/cunning-action" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <label>cunning</label>
+          <select name="action">
+            <option value="dash">Dash</option>
+            <option value="disengage">Disengage</option>
+            <option value="hide">Hide</option>
+          </select>
+          <button type="submit" class="small">do (BA)</button>
+        </form>
+        {% endif %}
+        {% if 'bardic_inspiration' in (lc.class_features or []) %}
+        <form method="post" action="/sessions/{{ gs.id }}/bardic-inspire" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <label>inspire</label>
+          <select name="target_id">
+            {% for t in live_characters %}{% if t.id != lc.id and not t.is_enemy %}<option value="{{ t.id }}">{{ t.name }}</option>{% endif %}{% endfor %}
+          </select>
+          <select name="die_size"><option value="6">d6</option><option value="8">d8</option><option value="10">d10</option><option value="12">d12</option></select>
+          <button type="submit" class="small">inspire</button>
+        </form>
+        {% endif %}
+        {% set has_bardic_die = (effects_by_target.get(lc.id, []) | selectattr('spell_key', 'equalto', 'bardic_inspiration') | list) %}
+        {% if has_bardic_die %}
+        <form method="post" action="/sessions/{{ gs.id }}/spend-bardic" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <button type="submit" class="small">spend bardic die</button>
+        </form>
+        {% endif %}
         {% if 'lay_on_hands' in (lc.class_features or []) %}
         <form method="post" action="/sessions/{{ gs.id }}/lay-on-hands" class="inline-form">
           <input type="hidden" name="actor_id" value="{{ lc.id }}">
@@ -863,6 +899,16 @@
     <button type="submit" class="small">spawn object</button>
   </form>
   {% endif %}
+  <form method="post" action="/sessions/{{ gs.id }}/generate-loot" class="inline-form" style="margin-top:8px">
+    <span class="meta">loot:</span>
+    <select name="tier">
+      <option value="1">tier 1 (CR 0-4)</option>
+      <option value="2">tier 2 (CR 5-10)</option>
+      <option value="3">tier 3 (CR 11-16)</option>
+      <option value="4">tier 4 (CR 17+)</option>
+    </select>
+    <button type="submit" class="small">generate</button>
+  </form>
   {% if items_catalog %}
   <form method="post" action="/sessions/{{ gs.id }}/apply-item" class="inline-form" style="margin-top:8px">
     <span class="meta">item:</span>
