@@ -2633,5 +2633,583 @@
     "description": "Fill a 5-ft cube with spinning daggers. Any creature in the area when cast or that enters takes 4d4 slashing. +2d4 per slot above 2nd. Note: aura handler tracks caster position; place the caster at the cube center.",
     "requires_sight": true,
     "target_type": "self"
+  },
+  "true_strike": {
+    "name": "True Strike",
+    "level": 0,
+    "school": "divination",
+    "casting_time": "action",
+    "range_ft": 30,
+    "components": [
+      "S"
+    ],
+    "duration": "1 round",
+    "concentration": true,
+    "effect_type": "manual",
+    "description": "Point at a target. If you attack the target on your next turn before this spell ends, your attack roll has advantage. Concentration; takes a full action to set up.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "guidance": {
+    "name": "Guidance",
+    "level": 0,
+    "school": "divination",
+    "casting_time": "action",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "manual",
+    "description": "Touch a willing creature. Once before the spell ends, the target can roll a d4 and add it to one ability check of its choice. DM/player applies the d4 manually when rolling the check.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "resistance": {
+    "name": "Resistance",
+    "level": 0,
+    "school": "abjuration",
+    "casting_time": "action",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "manual",
+    "description": "Touch a willing creature. Once before the spell ends, the target can roll a d4 and add it to one saving throw of its choice. Apply manually.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "shillelagh": {
+    "name": "Shillelagh",
+    "level": 0,
+    "school": "transmutation",
+    "casting_time": "bonus_action",
+    "range_ft": 0,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "1 minute",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Imbue a club or quarterstaff. For the duration, weapon damage becomes 1d8 + your spellcasting modifier and attacks use your spellcasting ability for the attack roll.",
+    "requires_sight": false,
+    "target_type": "self"
+  },
+  "mage_hand": {
+    "name": "Mage Hand",
+    "level": 0,
+    "school": "conjuration",
+    "casting_time": "action",
+    "range_ft": 30,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "1 minute",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "A spectral hand appears at a point you choose. As an action, you can move the hand 30 ft and manipulate objects, open unlocked doors, stow items, etc. Cannot attack or weigh more than 10 lbs.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "light": {
+    "name": "Light",
+    "level": 0,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "M"
+    ],
+    "duration": "1 hour",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Touch one object no larger than 10 ft. The object sheds bright light in a 20-ft radius and dim light for an additional 20 ft.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "dancing_lights": {
+    "name": "Dancing Lights",
+    "level": 0,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 120,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "manual",
+    "description": "Create up to four torch-like lights within range. Move them as a bonus action.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "minor_illusion": {
+    "name": "Minor Illusion",
+    "level": 0,
+    "school": "illusion",
+    "casting_time": "action",
+    "range_ft": 30,
+    "components": [
+      "S",
+      "M"
+    ],
+    "duration": "1 minute",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Create a sound or image of an object within range. Investigation check vs spell save DC discerns the illusion.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "mending": {
+    "name": "Mending",
+    "level": 0,
+    "school": "transmutation",
+    "casting_time": "1 minute",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Repair a single break or tear in an object you touch.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "message": {
+    "name": "Message",
+    "level": 0,
+    "school": "transmutation",
+    "casting_time": "action",
+    "range_ft": 120,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "1 round",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Whisper a message to a creature within range that only it hears; it can whisper back.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "prestidigitation": {
+    "name": "Prestidigitation",
+    "level": 0,
+    "school": "transmutation",
+    "casting_time": "action",
+    "range_ft": 10,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "up to 1 hour",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "A minor magical trick: clean/soil an object, light/snuff a candle, change flavor, create a sensory effect, etc.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "druidcraft": {
+    "name": "Druidcraft",
+    "level": 0,
+    "school": "transmutation",
+    "casting_time": "action",
+    "range_ft": 30,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Predict weather, cause a flower to bloom, light/snuff fire, or create a sensory effect.",
+    "requires_sight": false,
+    "target_type": "point_seen"
+  },
+  "misty_step": {
+    "name": "Misty Step",
+    "level": 2,
+    "school": "conjuration",
+    "casting_time": "bonus_action",
+    "range_ft": 0,
+    "components": [
+      "V"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Briefly surrounded by silvery mist, you teleport up to 30 ft to an unoccupied space you can see.",
+    "requires_sight": true,
+    "target_type": "self"
+  },
+  "fly": {
+    "name": "Fly",
+    "level": 3,
+    "school": "transmutation",
+    "casting_time": "action",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "10 minutes",
+    "concentration": true,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "",
+        "name": "Fly",
+        "description": "60 ft fly speed.",
+        "target_scope": "each_target",
+        "duration_rounds": 100,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true
+      }
+    ],
+    "description": "Touch a willing creature. Target gains a 60-ft fly speed for the duration.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "dimension_door": {
+    "name": "Dimension Door",
+    "level": 4,
+    "school": "conjuration",
+    "casting_time": "action",
+    "range_ft": 500,
+    "components": [
+      "V"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Teleport yourself (and one willing Medium-or-smaller creature touching you) up to 500 ft to a location you can describe.",
+    "requires_sight": false,
+    "target_type": "self"
+  },
+  "teleport": {
+    "name": "Teleport",
+    "level": 7,
+    "school": "conjuration",
+    "casting_time": "action",
+    "range_ft": 10,
+    "components": [
+      "V"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Teleport yourself and up to eight willing creatures to a destination you choose. Roll d100 vs familiarity table for accuracy.",
+    "requires_sight": false,
+    "target_type": "self"
+  },
+  "plane_shift": {
+    "name": "Plane Shift",
+    "level": 7,
+    "school": "conjuration",
+    "casting_time": "action",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Transport up to eight willing creatures (joined hands) to a different plane of existence. Or, used as an attack: a single creature must make CHA save or be banished to another plane.",
+    "requires_sight": false,
+    "target_type": "creature_seen"
+  },
+  "heal": {
+    "name": "Heal",
+    "level": 6,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 60,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "healing",
+    "healing": {
+      "dice": "0d0+70",
+      "modifier": "",
+      "scaling": {
+        "per_slot_above": 6,
+        "extra_dice": "10"
+      }
+    },
+    "description": "Choose a creature within range. Heal 70 HP and end blinded, deafened, and any disease. +10 HP per slot above 6th. (Heal table simplified \u2014 adjust manually.)",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "mass_cure_wounds": {
+    "name": "Mass Cure Wounds",
+    "level": 5,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 60,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "healing",
+    "max_targets": 6,
+    "area": {
+      "shape": "sphere",
+      "radius_ft": 30
+    },
+    "healing": {
+      "dice": "3d8",
+      "modifier": "spellcasting",
+      "scaling": {
+        "per_slot_above": 5,
+        "extra_dice": "1d8"
+      }
+    },
+    "description": "Up to six creatures within a 30-ft radius regain HP equal to 3d8 + your spellcasting modifier.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "greater_restoration": {
+    "name": "Greater Restoration",
+    "level": 5,
+    "school": "abjuration",
+    "casting_time": "action",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Touch a creature. End ONE of: charmed/petrified, a curse (incl. attunement to a cursed item), reduction to ability score, reduction to HP max, or one level of exhaustion.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "raise_dead": {
+    "name": "Raise Dead",
+    "level": 5,
+    "school": "necromancy",
+    "casting_time": "1 hour",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Return a creature dead for \u226410 days to life with 1 HP. They suffer -4 to all rolls for 4 long rests. Costs 500gp diamond.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "resurrection": {
+    "name": "Resurrection",
+    "level": 7,
+    "school": "necromancy",
+    "casting_time": "1 hour",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Return a creature dead for \u2264100 years to life with full HP. Costs 1000gp diamond.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "magic_weapon": {
+    "name": "Magic Weapon",
+    "level": 2,
+    "school": "transmutation",
+    "casting_time": "bonus_action",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "1 hour",
+    "concentration": true,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "",
+        "name": "Magic Weapon (+1)",
+        "description": "+1 to attack and damage rolls with the touched weapon.",
+        "target_scope": "each_target",
+        "duration_rounds": 600,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true
+      }
+    ],
+    "description": "Touch a nonmagical weapon. For the duration it becomes a +1 magic weapon. At 4th level slot it becomes +2; at 6th, +3.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "moonbeam": {
+    "name": "Moonbeam",
+    "level": 2,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 120,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "manual",
+    "area": {
+      "shape": "cylinder",
+      "radius_ft": 5,
+      "height_ft": 40
+    },
+    "applies_effects": [
+      {
+        "handler_key": "aura_damage",
+        "name": "Moonbeam",
+        "description": "5-ft radius beam. Each creature entering or starting turn there: CON save, 2d10 radiant on fail (+1d10 per slot above 2nd).",
+        "target_scope": "self",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "payload": {
+          "radius_ft": 5,
+          "dice": "2d10",
+          "type": "radiant",
+          "save_ability": "constitution",
+          "hostile_only": false
+        }
+      }
+    ],
+    "description": "A silvery beam of moonlight in a 5-ft radius cylinder. Creatures in the area on cast or entering on a turn make CON save or take 2d10 radiant. Bonus action to move 60 ft.",
+    "requires_sight": true,
+    "target_type": "self"
+  },
+  "guardian_of_faith": {
+    "name": "Guardian of Faith",
+    "level": 4,
+    "school": "conjuration",
+    "casting_time": "action",
+    "range_ft": 30,
+    "components": [
+      "V"
+    ],
+    "duration": "8 hours",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Summon a Large spectral guardian. Hostile creatures entering its 10-ft reach take 20 radiant (or necrotic if you choose) damage; DEX save halves. After 60 total damage dealt, the guardian vanishes.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "wall_of_ice": {
+    "name": "Wall of Ice",
+    "level": 6,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 120,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "10 minutes",
+    "concentration": true,
+    "effect_type": "manual",
+    "area": {
+      "shape": "wall"
+    },
+    "applies_effects": [
+      {
+        "handler_key": "wall_damage",
+        "name": "Wall of Ice",
+        "description": "Hemispherical or wall ice. Cold damage on cross. Each panel: AC 12, HP 30, vulnerable to fire.",
+        "target_scope": "area",
+        "duration_rounds": 100,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "area": {
+          "shape": "wall"
+        },
+        "payload": {
+          "dice": "5d6",
+          "type": "cold",
+          "save": {
+            "ability": "dex",
+            "dc": 14
+          },
+          "blocks_movement": true
+        }
+      }
+    ],
+    "description": "A wall of ice 10 ft thick \u00d7 10 ft \u00d7 10 ft per panel. Creatures crossing take 5d6 cold damage; DEX save halves. Wall blocks line of effect.",
+    "requires_sight": true,
+    "target_type": "wall"
+  },
+  "detect_magic": {
+    "name": "Detect Magic",
+    "level": 1,
+    "school": "divination",
+    "casting_time": "action",
+    "range_ft": 0,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "10 minutes",
+    "concentration": true,
+    "effect_type": "manual",
+    "description": "For the duration, sense the presence of magic within 30 ft. As an action, see a faint aura around any visible magical creature/object and learn its school.",
+    "requires_sight": false,
+    "target_type": "self"
+  },
+  "identify": {
+    "name": "Identify",
+    "level": 1,
+    "school": "divination",
+    "casting_time": "1 minute",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Touch an item; learn its magical properties, attunement, charges, and any spells affecting it. Or touch a creature and learn what spells affect it.",
+    "requires_sight": false,
+    "target_type": "touch"
   }
 }

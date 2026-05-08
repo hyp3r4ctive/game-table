@@ -245,6 +245,7 @@ class LiveCharacter(SQLModel, table=True):
     is_inspired: bool = False
     challenge_rating: str = ""
     class_features: list = Field(default_factory=list, sa_column=Column(JSON))
+    resources: dict = Field(default_factory=dict, sa_column=Column(JSON))
 
 
 class ActiveEffect(SQLModel, table=True):

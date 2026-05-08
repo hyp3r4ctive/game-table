@@ -1362,6 +1362,16 @@ def short_rest(
         if "warlock_pact_magic" in (lc.class_features or []):
             lc.spell_slots = _default_spell_slots(lc.level or 1)
             _log(db, gs, f"  {lc.name}: pact magic slots restored")
+        # Restore short-rest resources to max.
+        res = dict(lc.resources or {})
+        for key, entry in list(res.items()):
+            if (entry or {}).get("recharge") == "short_rest":
+                entry = dict(entry)
+                entry["current"] = entry.get("max", 0)
+                res[key] = entry
+        if res != (lc.resources or {}):
+            lc.resources = res
+            _log(db, gs, f"  {lc.name}: short-rest resources restored")
         db.add(lc)
         _log(db, gs, f"  {lc.name}: spent {spend}{die} ({rolled.total}+{con_mod*spend} CON), healed {gained} (HP {lc.current_hp}/{lc.max_hp})")
     db.commit()
@@ -1407,8 +1417,19 @@ def long_rest(
             lc.death_save_failures = 0
             note = ""
         lc.spell_slots = _default_spell_slots(lc.level or 1)
+        # Long rest restores all resources (short and long).
+        res = dict(lc.resources or {})
+        for key, entry in list(res.items()):
+            entry = dict(entry or {})
+            entry["current"] = entry.get("max", 0)
+            res[key] = entry
+        lc.resources = res
+        # Hit dice: regain up to half of total on long rest (RAW).
+        max_hd = lc.level or 1
+        regained_hd = min((lc.hit_dice_used or 0), max(1, max_hd // 2))
+        lc.hit_dice_used = max(0, (lc.hit_dice_used or 0) - regained_hd)
         db.add(lc)
-        _log(db, gs, f"  {lc.name}: full HP, slots restored{note}")
+        _log(db, gs, f"  {lc.name}: full HP, slots restored, all resources refilled, regained {regained_hd} hit dice{note}")
     db.commit()
     events.publish(session_id)
     return {"ok": True}
@@ -2182,6 +2203,179 @@ def use_scroll(
     }
     _log(db, gs, f"{lc.name} reads a scroll of {spell['name']}")
     _do_cast(db, gs, cast_params, user, bypass=set())
+    db.commit()
+    events.publish(session_id)
+    return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+
+
+@router.post("/sessions/{session_id}/lc/{lc_id}/resource/use")
+def use_resource(
+    session_id: int,
+    lc_id: int,
+    key: str = Form(),
+    amount: int = Form(1),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Generic class-resource consume: decrement resources[key].current by amount.
+    DM/owner only. Useful for ki points, sorcery points, lay-on-hands pool, channel
+    divinity, action surge uses, second wind uses, bardic inspiration dice, etc.
+    """
+    gs = _require_session(db, session_id, user)
+    lc = _require_live(db, session_id, lc_id)
+    if not (gs.campaign_id and (db.get(Campaign, gs.campaign_id).dm_id == user.id) or lc.owner_id == user.id):
+        raise HTTPException(403)
+    res = dict(lc.resources or {})
+    entry = dict(res.get(key) or {"current": 0, "max": 0, "label": key})
+    if entry.get("current", 0) < amount:
+        raise HTTPException(400, f"insufficient {key} ({entry.get('current', 0)} < {amount})")
+    entry["current"] = entry["current"] - amount
+    res[key] = entry
+    lc.resources = res
+    db.add(lc)
+    _log(db, gs, f"{lc.name} spends {amount} {entry.get('label', key)} ({entry['current']}/{entry.get('max', '?')} remaining)")
+    db.commit()
+    events.publish(session_id)
+    return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+
+
+@router.post("/sessions/{session_id}/lc/{lc_id}/resource/set")
+def set_resource(
+    session_id: int,
+    lc_id: int,
+    key: str = Form(),
+    label: str = Form(""),
+    current: int = Form(0),
+    max_value: int = Form(0),
+    recharge: str = Form("long_rest"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """DM-only: define or update a class resource on an LC."""
+    gs = _require_session(db, session_id, user, dm_only=True)
+    lc = _require_live(db, session_id, lc_id)
+    res = dict(lc.resources or {})
+    if max_value <= 0 and key in res:
+        # Setting max to 0: remove the resource
+        del res[key]
+        _log(db, gs, f"DM clears resource '{key}' on {lc.name}")
+    else:
+        res[key] = {
+            "label": label or key,
+            "current": max(0, min(current, max_value)),
+            "max": max_value,
+            "recharge": recharge,
+        }
+        _log(db, gs, f"DM sets {lc.name} {label or key} = {res[key]['current']}/{max_value} ({recharge})")
+    lc.resources = res
+    db.add(lc)
+    db.commit()
+    events.publish(session_id)
+    return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+
+
+@router.post("/sessions/{session_id}/action-surge")
+def action_surge(
+    session_id: int,
+    actor_id: int = Form(),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Fighter Action Surge: consume one use of resources['action_surge'], reset
+    gs.action_used so the actor can take another Action this turn.
+    """
+    gs = _require_session(db, session_id, user)
+    lc = _require_live(db, session_id, actor_id)
+    if not _can_act(gs, lc, user):
+        raise HTTPException(403)
+    res = dict(lc.resources or {})
+    entry = dict(res.get("action_surge") or {"current": 1, "max": 1, "label": "Action Surge", "recharge": "short_rest"})
+    if entry.get("current", 0) <= 0:
+        raise HTTPException(400, "no Action Surge uses remaining")
+    entry["current"] -= 1
+    res["action_surge"] = entry
+    lc.resources = res
+    db.add(lc)
+    gs.action_used = False
+    lc.attacks_remaining_this_action = 0  # fresh Action seeds new attack chain
+    db.add(gs)
+    _log(db, gs, f"{lc.name} uses Action Surge — gains an extra Action this turn ({entry['current']}/{entry['max']} remaining)")
+    db.commit()
+    events.publish(session_id)
+    return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+
+
+@router.post("/sessions/{session_id}/second-wind")
+def second_wind(
+    session_id: int,
+    actor_id: int = Form(),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Fighter Second Wind: consume one use, heal 1d10 + fighter level."""
+    gs = _require_session(db, session_id, user)
+    lc = _require_live(db, session_id, actor_id)
+    if not _can_act(gs, lc, user):
+        raise HTTPException(403)
+    res = dict(lc.resources or {})
+    entry = dict(res.get("second_wind") or {"current": 1, "max": 1, "label": "Second Wind", "recharge": "short_rest"})
+    if entry.get("current", 0) <= 0:
+        raise HTTPException(400, "no Second Wind uses remaining")
+    entry["current"] -= 1
+    res["second_wind"] = entry
+    lc.resources = res
+    rolled = dice.roll("1d10")
+    healed = _heal_to(db, gs, lc, rolled.total + (lc.level or 1))
+    db.add(lc)
+    flags = _consume_turn_resource(db, gs, lc, "bonus_action")
+    if flags:
+        _log(db, gs, f"  warning: {flags[0]}")
+    _log(db, gs, f"{lc.name} uses Second Wind: heals {healed} (1d10={rolled.total} + level {lc.level or 1}). HP {lc.current_hp}/{lc.max_hp}")
+    db.commit()
+    events.publish(session_id)
+    return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+
+
+@router.post("/sessions/{session_id}/lay-on-hands")
+def lay_on_hands(
+    session_id: int,
+    actor_id: int = Form(),
+    target_id: int = Form(),
+    amount: int = Form(),
+    cure_poison: bool = Form(False),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Paladin Lay on Hands: spend N points from pool to heal N HP, or 5 points
+    to cure one disease/poison.
+    """
+    gs = _require_session(db, session_id, user)
+    lc = _require_live(db, session_id, actor_id)
+    target = _require_live(db, session_id, target_id)
+    if not _can_act(gs, lc, user):
+        raise HTTPException(403)
+    res = dict(lc.resources or {})
+    entry = dict(res.get("lay_on_hands") or {"current": (lc.level or 1) * 5, "max": (lc.level or 1) * 5, "label": "Lay on Hands", "recharge": "long_rest"})
+    cost = 5 if cure_poison else max(1, amount)
+    if entry.get("current", 0) < cost:
+        raise HTTPException(400, f"insufficient Lay on Hands pool ({entry.get('current', 0)} < {cost})")
+    entry["current"] -= cost
+    res["lay_on_hands"] = entry
+    lc.resources = res
+    db.add(lc)
+    if cure_poison:
+        # Remove poisoned condition
+        existing = list(target.conditions or [])
+        new = [c for c in existing if c.get("name") != "poisoned"]
+        target.conditions = new
+        db.add(target)
+        _log(db, gs, f"{lc.name} cures {target.name} of poison via Lay on Hands ({entry['current']}/{entry['max']} pool)")
+    else:
+        healed = _heal_to(db, gs, target, cost)
+        _log(db, gs, f"{lc.name} heals {target.name} for {healed} via Lay on Hands ({entry['current']}/{entry['max']} pool, HP {target.current_hp}/{target.max_hp})")
+    flags = _consume_turn_resource(db, gs, lc, "action")
+    if flags:
+        _log(db, gs, f"  warning: {flags[0]}")
     db.commit()
     events.publish(session_id)
     return RedirectResponse(f"/sessions/{session_id}", status_code=303)

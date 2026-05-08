@@ -520,6 +520,61 @@
         </form>
         {% endif %}
 
+        {% if lc.resources %}
+        <div class="row" style="gap:6px; flex-wrap:wrap; margin-top:4px">
+          <span class="meta">resources:</span>
+          {% for k, r in lc.resources.items() %}
+            <form method="post" action="/sessions/{{ gs.id }}/lc/{{ lc.id }}/resource/use" class="inline-form" style="margin:0">
+              <input type="hidden" name="key" value="{{ k }}">
+              <input type="hidden" name="amount" value="1">
+              <button type="submit" class="small secondary" title="{{ r.label }} ({{ r.recharge }})" {% if not r.current %}disabled{% endif %}>{{ r.label }} {{ r.current }}/{{ r.max }}</button>
+            </form>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if 'action_surge' in (lc.class_features or []) %}
+        <form method="post" action="/sessions/{{ gs.id }}/action-surge" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <button type="submit" class="small">Action Surge</button>
+        </form>
+        {% endif %}
+        {% if 'second_wind' in (lc.class_features or []) %}
+        <form method="post" action="/sessions/{{ gs.id }}/second-wind" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <button type="submit" class="small">Second Wind</button>
+        </form>
+        {% endif %}
+        {% if 'lay_on_hands' in (lc.class_features or []) %}
+        <form method="post" action="/sessions/{{ gs.id }}/lay-on-hands" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <label>lay on hands</label>
+          <select name="target_id">
+            {% for t in live_characters %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+          </select>
+          <input type="number" name="amount" value="5" min="1" style="width:60px">
+          <label style="display:inline-flex; align-items:center; gap:4px"><input type="checkbox" name="cure_poison" value="true"> cure poison (5pt)</label>
+          <button type="submit" class="small">heal</button>
+        </form>
+        {% endif %}
+
+        {% if is_dm %}
+        <details style="margin-top:4px">
+          <summary class="meta" style="font-size:0.8em">+ resource (DM)</summary>
+          <form method="post" action="/sessions/{{ gs.id }}/lc/{{ lc.id }}/resource/set" class="inline-form" style="margin-top:4px">
+            <label>key</label><input type="text" name="key" placeholder="ki" style="width:90px">
+            <label>label</label><input type="text" name="label" placeholder="Ki Points" style="width:120px">
+            <label>cur/max</label><input type="number" name="current" value="0" style="width:50px">/<input type="number" name="max_value" value="0" style="width:50px">
+            <select name="recharge">
+              <option value="long_rest">long rest</option>
+              <option value="short_rest">short rest</option>
+              <option value="other">other</option>
+            </select>
+            <button type="submit" class="small">save</button>
+          </form>
+        </details>
+        {% endif %}
+
         {% if not lc.is_enemy %}
         <form method="post" action="/sessions/{{ gs.id }}/cast" class="inline-form cast-form" data-caster-id="{{ lc.id }}" onsubmit="return prepareCastSubmit(this)">
           <input type="hidden" name="caster_id" value="{{ lc.id }}">
