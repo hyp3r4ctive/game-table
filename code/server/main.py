@@ -272,6 +272,7 @@ async def update_campaign_rules(
     for key in RULE_DEFINITIONS:
         rules[key] = coerce_form_value(key, form.get(f"rule_{key}"))
     campaign.rules = rules
+    campaign.persistent_death_saves = bool(form.get("persistent_death_saves"))
     db.add(campaign)
     db.commit()
     return RedirectResponse(f"/campaigns/{campaign_id}/master", status_code=303)

@@ -48,6 +48,101 @@
   {% if gs.pushed_to_table %} · <span class="pill teal">on table</span>{% endif %}
 </p>
 
+<div id="reaction-panel" style="display:none; padding:12px; margin-bottom:12px; background:#3a2a10; border:2px solid #d09040; border-radius:8px">
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap">
+    <div>
+      <strong style="color:#ffcb70; font-size:1.05em">⚡ Reaction available</strong>
+      <div id="reaction-prompt-text" class="meta" style="margin-top:4px"></div>
+    </div>
+    <div id="reaction-actions" class="row" style="gap:6px"></div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const SID = {{ gs.id }};
+  const USER_ID = {{ user.id }};
+  const IS_DM = {{ 'true' if is_dm else 'false' }};
+  const MY_LC_IDS = {{ my_lc_ids|tojson }};
+  async function refreshReaction() {
+    try {
+      const res = await fetch(`/sessions/${SID}/state`);
+      if (!res.ok) return;
+      const state = await res.json();
+      const pr = state.pending_reaction || {};
+      const panel = document.getElementById('reaction-panel');
+      if (!pr.id) { panel.style.display = 'none'; return; }
+      const eligibleIds = pr.eligible_reactor_ids || [];
+      // DM sees prompts for any reactor; players see prompts for reactors they own.
+      const myEligible = IS_DM
+        ? (state.live_characters || []).filter(lc => eligibleIds.includes(lc.id))
+        : (state.live_characters || []).filter(lc => eligibleIds.includes(lc.id) && MY_LC_IDS.includes(lc.id));
+      if (!myEligible.length) { panel.style.display = 'none'; return; }
+      panel.style.display = 'block';
+      const td = pr.trigger_data || {};
+      let promptText = '';
+      let recommendedSpells = [];
+      let nonSpellAction = null;  // {label, payload?} for non-spell reactions like OA
+      if (pr.trigger_type === 'spell_cast') {
+        promptText = `${td.caster_name || '?'} is casting <strong>${td.spell_name || '?'}</strong> (level ${td.spell_level}). Counterspell?`;
+        recommendedSpells = [{ key: 'counterspell', label: 'Counterspell (slot 3)', slot: 3 }];
+      } else if (pr.trigger_type === 'attack_hit') {
+        promptText = `${td.attacker_name || '?'} hit <strong>${td.target_name || 'you'}</strong> (${td.to_hit_total} vs AC ${td.target_ac}, ${td.damage} ${td.damage_type}${td.critical ? ', CRIT' : ''}). Shield?`;
+        recommendedSpells = [{ key: 'shield', label: 'Shield (slot 1)', slot: 1 }];
+      } else if (pr.trigger_type === 'movement_oa') {
+        promptText = `<strong>${td.mover_name || '?'}</strong> is leaving your reach. Opportunity Attack?`;
+        nonSpellAction = { label: 'Opportunity Attack' };
+      } else if (pr.trigger_type === 'damage_taken') {
+        promptText = `You took ${td.damage} ${td.damage_type} damage. Hellish Rebuke?`;
+        recommendedSpells = [{ key: 'hellish_rebuke', label: 'Hellish Rebuke (slot 1)', slot: 1 }];
+      } else {
+        promptText = `${pr.trigger_type}: react?`;
+      }
+      document.getElementById('reaction-prompt-text').innerHTML = promptText;
+      const actions = document.getElementById('reaction-actions');
+      const reactorId = myEligible[0].id;
+      const reactorName = myEligible[0].name;
+      let html = `<span class="meta">as ${reactorName}:</span>`;
+      if (nonSpellAction) {
+        html += `<button type="button" onclick="reactUseNonSpell(${reactorId})" class="small">${nonSpellAction.label}</button>`;
+      }
+      for (const sp of recommendedSpells) {
+        html += `<button type="button" onclick="reactUse(${reactorId}, '${sp.key}', ${sp.slot})" class="small">${sp.label}</button>`;
+      }
+      html += `<button type="button" onclick="reactSkip(${reactorId})" class="small secondary">skip</button>`;
+      actions.innerHTML = html;
+    } catch (e) { console.error('reaction refresh', e); }
+  }
+  window.reactUse = async function(reactor_id, spell_name, slot_level) {
+    const res = await fetch(`/sessions/${SID}/reactions/use`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ reactor_id, spell_name, slot_level }),
+    });
+    if (!res.ok) { alert('reaction failed: ' + await res.text()); }
+    refreshReaction();
+  };
+  window.reactUseNonSpell = async function(reactor_id) {
+    const res = await fetch(`/sessions/${SID}/reactions/use`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ reactor_id }),
+    });
+    if (!res.ok) { alert('reaction failed: ' + await res.text()); }
+    refreshReaction();
+  };
+  window.reactSkip = async function(reactor_id) {
+    const res = await fetch(`/sessions/${SID}/reactions/skip`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ reactor_id }),
+    });
+    if (!res.ok) { alert('skip failed: ' + await res.text()); }
+    refreshReaction();
+  };
+  refreshReaction();
+  const es = new EventSource(`/sessions/${SID}/events`);
+  es.addEventListener('state_changed', refreshReaction);
+})();
+</script>
+
 {% if is_dm %}
 <div class="panel">
   <h2 style="display:inline-block">Battle Map</h2>
@@ -140,6 +235,9 @@
       <form method="post" action="/sessions/{{ gs.id }}/combat/start" style="display:inline">
         <button type="submit">start combat (auto-roll initiative)</button>
       </form>
+      <form method="post" action="/sessions/{{ gs.id }}/long-rest" style="display:inline" onsubmit="return confirm('Long rest? Restores HP and spell slots for all PCs.');">
+        <button type="submit" class="secondary">long rest</button>
+      </form>
     {% else %}
       <form method="post" action="/sessions/{{ gs.id }}/combat/next-turn" style="display:inline">
         <button type="submit">next turn</button>
@@ -193,6 +291,28 @@
             <span class="conditions">{% for c in lc.conditions %}{{ c.name }}{% if not loop.last %}, {% endif %}{% endfor %}</span>
           {% endif %}
         </div>
+        {% if not lc.is_enemy and lc.current_hp <= 0 %}
+        <div class="row" style="gap:6px; margin-top:6px">
+          {% if lc.is_dead %}
+            <span class="pill danger">DEAD</span>
+          {% elif lc.is_stable %}
+            <span class="pill">stable (0 HP)</span>
+          {% else %}
+            <span class="meta">death saves:</span>
+            <span class="pill">✓ {{ lc.death_save_successes }}/3</span>
+            <span class="pill warn">✗ {{ lc.death_save_failures }}/3</span>
+          {% endif %}
+        </div>
+        {% endif %}
+        {% set my_effects = effects_by_target.get(lc.id, []) %}
+        {% if my_effects %}
+        <div class="row" style="gap:4px; flex-wrap:wrap; margin-top:6px">
+          <span class="meta">effects:</span>
+          {% for eff in my_effects %}
+            <span class="pill{% if eff.is_concentration %} teal{% endif %}" title="{{ eff.description|e }}">{{ eff.name }}{% if eff.is_concentration %} ⚡{% endif %}{% if eff.duration_rounds %} ({{ eff.duration_rounds }}r){% endif %}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
       {% endif %}
 
       {% if is_dm %}
@@ -261,6 +381,16 @@
           <select name="damage_type">
             {% for dt in damage_types %}<option value="{{ dt }}">{{ dt }}</option>{% endfor %}
           </select>
+          {% if lc.sneak_attack_dice %}
+          <label style="display:inline-flex; align-items:center; gap:4px; margin:0; color:var(--text-faint); font-size:0.82em" title="+{{ lc.sneak_attack_dice }}d6 if eligible (advantage or ally adjacent). Once per turn.">
+            <input type="checkbox" name="sneak_attack" value="true"{% if lc.sneak_attack_used_this_turn %} disabled{% endif %}> sneak
+          </label>
+          {% endif %}
+          {% if 'divine_smite' in (lc.class_features or []) %}
+          <label class="meta" style="font-size:0.82em" title="Spend a spell slot for +Nd8 radiant on hit (2d8 at L1, +1d8 per slot up to 5d8).">
+            smite slot <input type="number" name="smite_slot_level" min="0" max="5" value="0" style="width:50px; margin:0">
+          </label>
+          {% endif %}
           <button type="submit" class="small">attack</button>
         </form>
 
@@ -269,6 +399,8 @@
           <input type="hidden" name="caster_id" value="{{ lc.id }}">
           <input type="hidden" name="aoe_x" value="">
           <input type="hidden" name="aoe_y" value="">
+          <input type="hidden" name="wall_x2" value="">
+          <input type="hidden" name="wall_y2" value="">
           <label>cast</label>
           <select name="spell_name" class="spell-select">
             {% for s in spells %}<option value="{{ s.key }}" data-area='{{ s.area|tojson if s.area else "null" }}' data-range="{{ s.range_ft }}" data-target-type="{{ s.target_type }}">L{{ s.level }} {{ s.name }}{% if s.area %} ({{ s.area.shape }}){% endif %}</option>{% endfor %}
@@ -293,6 +425,134 @@
 </div>
 
 {% if is_dm %}
+<div class="panel" id="effects-panel-dm">
+  <h3 style="display:inline-block">Active effects</h3>
+  <span class="meta" id="effects-count" style="margin-left:8px">—</span>
+  <div id="effects-list-dm" style="margin-top:8px"></div>
+  <details style="margin-top:10px">
+    <summary style="cursor:pointer; color:var(--teal-bright)">+ Apply custom effect</summary>
+    <div class="row" style="gap:6px; margin-top:8px; flex-wrap:wrap">
+      <select id="eff-target" style="min-width:140px">
+        <option value="">—area effect—</option>
+        {% for lc in live_characters %}<option value="{{ lc.id }}">{{ lc.name }}</option>{% endfor %}
+      </select>
+      <input id="eff-name" type="text" placeholder="effect name" style="width:160px; margin:0">
+      <input id="eff-rounds" type="number" placeholder="rounds" min="1" style="width:80px; margin:0">
+      <label style="display:inline-flex; align-items:center; gap:4px; margin:0; color:var(--text)"><input id="eff-conc" type="checkbox"> conc</label>
+      <input id="eff-desc" type="text" placeholder="description (optional)" style="flex:1; min-width:200px; margin:0">
+      <button type="button" onclick="addCustomEffect()" class="small">apply</button>
+    </div>
+    <p class="meta" style="margin-top:6px; font-size:0.82em">Freeform = no handler_key; the effect shows on UIs and ticks down but the engine doesn't enforce it. Use the spell catalog for mechanical effects (Bless, Haste, etc.).</p>
+  </details>
+  <details style="margin-top:10px">
+    <summary style="cursor:pointer; color:var(--teal-bright)">+ Place wall effect</summary>
+    <div class="row" style="gap:6px; margin-top:8px; flex-wrap:wrap; align-items:center">
+      <input id="wall-name" type="text" placeholder="wall name (e.g. Wall of Fire)" style="width:200px; margin:0">
+      <span class="meta">x1</span><input id="wall-x1" type="number" style="width:60px; margin:0">
+      <span class="meta">y1</span><input id="wall-y1" type="number" style="width:60px; margin:0">
+      <span class="meta">x2</span><input id="wall-x2" type="number" style="width:60px; margin:0">
+      <span class="meta">y2</span><input id="wall-y2" type="number" style="width:60px; margin:0">
+      <span class="meta">dmg</span><input id="wall-dice" type="text" placeholder="5d8" style="width:70px; margin:0">
+      <select id="wall-type" style="margin:0">
+        {% for dt in damage_types %}<option value="{{ dt }}">{{ dt }}</option>{% endfor %}
+      </select>
+      <label style="display:inline-flex; align-items:center; gap:4px; margin:0; color:var(--text)"><input id="wall-blocks" type="checkbox"> blocks movement</label>
+      <input id="wall-rounds" type="number" placeholder="rounds" min="1" style="width:80px; margin:0" value="10">
+      <button type="button" onclick="placeWall()" class="small">place wall</button>
+    </div>
+    <p class="meta" style="margin-top:6px; font-size:0.82em">Damage walls (Wall of Fire, Wall of Thorns, Blade Barrier) deal dmg per cell crossed. Block walls (Wall of Force, Wall of Stone) prevent the step entirely; leave dmg blank.</p>
+  </details>
+</div>
+
+<script>
+(function() {
+  const SID = {{ gs.id }};
+  const lcNames = { {% for lc in live_characters %}{{ lc.id }}: {{ lc.name | tojson }}{% if not loop.last %},{% endif %}{% endfor %} };
+  async function refreshEffects() {
+    try {
+      const res = await fetch(`/sessions/${SID}/state`);
+      if (!res.ok) return;
+      const state = await res.json();
+      const effs = state.active_effects || [];
+      document.getElementById('effects-count').textContent = effs.length ? `${effs.length} active` : 'none';
+      const list = document.getElementById('effects-list-dm');
+      if (!effs.length) { list.innerHTML = '<p class="meta" style="font-size:0.85em">none</p>'; return; }
+      list.innerHTML = effs.map(e => {
+        const who = e.target_live_id ? (lcNames[e.target_live_id] || `#${e.target_live_id}`) : '(area)';
+        const dur = e.duration_rounds != null ? `${e.duration_rounds}r` : '∞';
+        const conc = e.is_concentration ? ' <span class="pill warn">conc</span>' : '';
+        const note = !e.handler_key ? ' <span class="pill">note</span>' : '';
+        const desc = e.description ? `<div class="meta" style="font-size:0.82em">${escapeHtml(e.description)}</div>` : '';
+        return `<div style="padding:6px 8px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:4px; margin-bottom:4px">
+          <div class="row" style="justify-content:space-between; gap:8px">
+            <div><strong>${escapeHtml(e.name)}</strong> <span class="meta">→ ${escapeHtml(who)}</span> ${conc}${note} <span class="meta">${dur}</span></div>
+            <button type="button" class="small secondary" onclick="removeEffect(${e.id})">remove</button>
+          </div>
+          ${desc}
+        </div>`;
+      }).join('');
+    } catch (e) {}
+  }
+  function escapeHtml(s) { return String(s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  window.addCustomEffect = async function() {
+    const target_id = document.getElementById('eff-target').value || null;
+    const name = document.getElementById('eff-name').value.trim();
+    const description = document.getElementById('eff-desc').value.trim();
+    const rounds = document.getElementById('eff-rounds').value;
+    const conc = document.getElementById('eff-conc').checked;
+    if (!name) { return; }
+    const body = { name, description, is_concentration: conc };
+    if (target_id) body.target_id = parseInt(target_id);
+    if (rounds) body.duration_rounds = parseInt(rounds);
+    await fetch(`/sessions/${SID}/effects/add`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    document.getElementById('eff-name').value = '';
+    document.getElementById('eff-desc').value = '';
+    document.getElementById('eff-rounds').value = '';
+    document.getElementById('eff-conc').checked = false;
+    refreshEffects();
+  };
+  window.removeEffect = async function(id) {
+    await fetch(`/sessions/${SID}/effects/${id}/remove`, { method: 'POST' });
+    refreshEffects();
+  };
+  window.placeWall = async function() {
+    const name = document.getElementById('wall-name').value.trim() || 'Wall';
+    const x1 = parseFloat(document.getElementById('wall-x1').value);
+    const y1 = parseFloat(document.getElementById('wall-y1').value);
+    const x2 = parseFloat(document.getElementById('wall-x2').value);
+    const y2 = parseFloat(document.getElementById('wall-y2').value);
+    if ([x1,y1,x2,y2].some(n => isNaN(n))) { alert('all four wall coordinates required'); return; }
+    const dice = document.getElementById('wall-dice').value.trim();
+    const dmgType = document.getElementById('wall-type').value;
+    const blocks = document.getElementById('wall-blocks').checked;
+    const rounds = parseInt(document.getElementById('wall-rounds').value) || 10;
+    const handler_key = dice ? 'wall_damage' : '';
+    const payload = {};
+    if (dice) { payload.dice = dice; payload.type = dmgType; }
+    if (blocks) payload.blocks_movement = true;
+    const body = {
+      name, handler_key,
+      duration_rounds: rounds,
+      area: { shape: 'wall', points: [[x1,y1],[x2,y2]] },
+      payload,
+    };
+    await fetch(`/sessions/${SID}/effects/add`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    ['wall-name','wall-x1','wall-y1','wall-x2','wall-y2','wall-dice'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('wall-blocks').checked = false;
+    refreshEffects();
+  };
+  // Refresh on load + on every state change.
+  window.__refreshEffectsDM = refreshEffects;
+  refreshEffects();
+  const es = new EventSource(`/sessions/${SID}/events`);
+  es.addEventListener('state_changed', refreshEffects);
+})();
+</script>
+
 {% if gs.undo_stack %}
 <div class="panel">
   <h3>Undo</h3>
@@ -880,7 +1140,18 @@
         }
         inp.value = value;
       }
-      if ((activeCast.area.shape === 'cone' || activeCast.area.shape === 'line') && caster) {
+      if (activeCast.area.shape === 'wall') {
+        // Wall: two-click flow. First click sets start point; second sets end + submits.
+        if (!activeCast.wallStart) {
+          activeCast.wallStart = { x: cell.x, y: cell.y };
+          drawAoePreview();
+          return;
+        }
+        setHidden('aoe_x', activeCast.wallStart.x);
+        setHidden('aoe_y', activeCast.wallStart.y);
+        setHidden('wall_x2', cell.x);
+        setHidden('wall_y2', cell.y);
+      } else if ((activeCast.area.shape === 'cone' || activeCast.area.shape === 'line') && caster) {
         // origin = caster, direction snapped to 8-way from cursor
         setHidden('aoe_x', caster.x);
         setHidden('aoe_y', caster.y);
@@ -1071,6 +1342,20 @@
       const sizePx = (area.size_ft / fps) * SQUARE_PX;
       ctx.fillRect(activeCast.hoverX*SQUARE_PX, activeCast.hoverY*SQUARE_PX, sizePx, sizePx);
       ctx.strokeRect(activeCast.hoverX*SQUARE_PX, activeCast.hoverY*SQUARE_PX, sizePx, sizePx);
+    } else if (area.shape === 'wall') {
+      // Two-click flow: before first click, no preview. After first click, line from start to hover.
+      if (activeCast.wallStart) {
+        const [sx, sy] = cellCenter(activeCast.wallStart.x, activeCast.wallStart.y);
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(sx*SQUARE_PX, sy*SQUARE_PX);
+        ctx.lineTo(hcx*SQUARE_PX, hcy*SQUARE_PX);
+        ctx.stroke();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(sx*SQUARE_PX, sy*SQUARE_PX, 4, 0, Math.PI*2);
+        ctx.fill();
+      }
     } else if (area.shape === 'cone' || area.shape === 'line') {
       // Origin = caster cell; direction = caster -> cursor.
       if (!caster || caster.x === null || caster.x === undefined) return;
@@ -1136,6 +1421,10 @@
       const areaRaw = opt.dataset.area;
       const area = (!areaRaw || areaRaw === 'null') ? null : JSON.parse(areaRaw);
       if (!area) return;  // single-target: normal submit
+      const targetType = opt.dataset.targetType || '';
+      const omni = (area.shape === 'sphere' || area.shape === 'cube' || area.shape === 'circle');
+      // Self-centered omni AoE: caster is origin, no click needed — just submit.
+      if (omni && (targetType === 'self' || targetType === 'area_self')) return;
       e.preventDefault();
       activeCast = {
         casterId: parseInt(form.dataset.casterId),

@@ -71,7 +71,7 @@ def _spell_row_to_dict(row) -> dict:
         "description": row.description or "",
     }
     for k in ("damage", "healing", "save", "area", "attack", "darts", "beams",
-             "hp_threshold", "conditions_applied", "scaling"):
+             "hp_threshold", "conditions_applied", "applies_effects", "scaling"):
         v = getattr(row, k, None)
         if v:
             base[k] = v
@@ -261,16 +261,18 @@ def cast_spell(
 
     elif effect_type == "save_or_condition":
         save_info = spell["save"]
+        names = [b.get("name", "") for b in (spell.get("applies_effects") or []) if b.get("name")]
         for tn in target_names:
             t = SpellTarget(
                 name=tn,
                 save_required=save_info["ability"],
                 save_dc=spell_save_dc,
-                conditions_to_apply=spell.get("conditions_applied", []),
                 on_save_effect=save_info["on_success"],
             )
-            t.notes = f"DC {spell_save_dc} {save_info['ability']} save. On fail: {', '.join(c['name'] for c in spell.get('conditions_applied', []))}"
-            if save_info.get("save_at_end_of_turn"):
+            t.notes = f"DC {spell_save_dc} {save_info['ability']} save"
+            if names:
+                t.notes += f". On fail: {', '.join(names)}"
+            if save_info.get("save_at_end_of_turn") or any((b.get("save_each_turn") for b in (spell.get("applies_effects") or []))):
                 t.notes += " (repeats save at end of each turn)"
             result.targets.append(t)
 
@@ -281,19 +283,16 @@ def cast_spell(
                 name=tn,
                 save_required=save_info["ability"],
                 save_dc=spell_save_dc,
-                conditions_to_apply=spell.get("conditions_applied", []),
                 on_save_effect=save_info["on_success"],
             )
             t.notes = f"DC {spell_save_dc} {save_info['ability']} save"
             result.targets.append(t)
 
     elif effect_type == "buff":
+        names = [b.get("name", "") for b in (spell.get("applies_effects") or []) if b.get("name")]
         for tn in target_names:
-            t = SpellTarget(
-                name=tn,
-                conditions_to_apply=spell.get("conditions_applied", []),
-            )
-            t.notes = f"Buff applied: {', '.join(c['name'] for c in spell.get('conditions_applied', []))}"
+            t = SpellTarget(name=tn)
+            t.notes = f"Buff applied: {', '.join(names)}" if names else "Buff applied"
             result.targets.append(t)
 
     elif effect_type == "healing":
@@ -329,10 +328,7 @@ def cast_spell(
         result.damage_rolls.append(roll_result)
         result.notes.append(f"Affects {roll_result.total} HP worth of creatures (lowest HP first, ignoring unconscious)")
         for tn in target_names:
-            t = SpellTarget(
-                name=tn,
-                conditions_to_apply=spell.get("conditions_applied", []),
-            )
+            t = SpellTarget(name=tn)
             result.targets.append(t)
 
     elif effect_type == "manual":

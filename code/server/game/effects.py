@@ -49,8 +49,15 @@ class AttackRoll:
     target_id: int
     advantage: bool = False
     disadvantage: bool = False
-    bonus: int = 0
-    extra_dice: list[str] = field(default_factory=list)
+    bonus: int = 0  # to-hit bonus
+    extra_dice: list[str] = field(default_factory=list)  # added to the d20 roll (Bless: 1d4)
+    subtract_dice: list[str] = field(default_factory=list)  # subtracted from the d20 roll (Bane: 1d4)
+    damage_bonus: int = 0
+    extra_damage_dice: list = field(default_factory=list)  # [(dice_str, damage_type), ...] applied on hit
+    target_ac_bonus: int = 0  # added to target AC for hit threshold (Haste +2, Shield +5, etc.)
+    redirect_to_image: bool = False  # Mirror Image: attack targets an illusory duplicate
+    image_ac: Optional[int] = None  # AC of the redirected-to image (replaces target AC)
+    image_log: str = ""  # human-readable deflection note for the log
 
 
 @dataclass
@@ -61,6 +68,7 @@ class SaveRoll:
     disadvantage: bool = False
     bonus: int = 0
     extra_dice: list[str] = field(default_factory=list)
+    subtract_dice: list[str] = field(default_factory=list)
 
 
 @dataclass

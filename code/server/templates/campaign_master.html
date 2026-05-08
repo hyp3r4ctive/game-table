@@ -148,6 +148,11 @@
         {% endfor %}
       {% endif %}
     {% endfor %}
+    <h3 style="margin-top:14px; font-size:0.85em; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.06em">house rules</h3>
+    <div style="margin-bottom:10px">
+      <label><input type="checkbox" name="persistent_death_saves" {% if campaign.persistent_death_saves %}checked{% endif %}> Persistent death saves</label>
+      <div class="meta" style="margin-left:22px; font-size:0.82em; margin-top:2px">Death-save failures persist across loss/regain of consciousness; threshold becomes 4. Long rest removes one failure. Makes downed characters meaningfully fragile across an encounter chain.</div>
+    </div>
     <button type="submit" class="small" style="margin-top:8px">save rules</button>
   </form>
 </div>

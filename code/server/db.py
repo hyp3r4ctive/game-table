@@ -75,6 +75,7 @@ class Campaign(SQLModel, table=True):
     description: str = ""
     is_one_shot: bool = False
     is_active: bool = True
+    persistent_death_saves: bool = False
     rules: dict = Field(default_factory=dict, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
@@ -130,6 +131,8 @@ class GameSession(SQLModel, table=True):
     drawings: list = Field(default_factory=list, sa_column=Column(JSON))
     pending_actions: list = Field(default_factory=list, sa_column=Column(JSON))
     pending_walk: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    pending_aoe: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    pending_reaction: dict = Field(default_factory=dict, sa_column=Column(JSON))
     undo_stack: list = Field(default_factory=list, sa_column=Column(JSON))
     started_at: datetime = Field(default_factory=datetime.utcnow)
     ended_at: Optional[datetime] = None
@@ -174,7 +177,8 @@ class Spell(SQLModel, table=True):
     darts: dict = Field(default_factory=dict, sa_column=Column(JSON))
     beams: dict = Field(default_factory=dict, sa_column=Column(JSON))
     hp_threshold: dict = Field(default_factory=dict, sa_column=Column(JSON))
-    conditions_applied: list = Field(default_factory=list, sa_column=Column(JSON))
+    conditions_applied: list = Field(default_factory=list, sa_column=Column(JSON))  # legacy
+    applies_effects: list = Field(default_factory=list, sa_column=Column(JSON))
     scaling: dict = Field(default_factory=dict, sa_column=Column(JSON))
     max_targets: Optional[int] = None
     valid_targets: str = ""
@@ -213,6 +217,22 @@ class LiveCharacter(SQLModel, table=True):
     light_emission_ft: int = 0
     conditions: list = Field(default_factory=list, sa_column=Column(JSON))
     spell_slots: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    saving_throw_profs: list = Field(default_factory=list, sa_column=Column(JSON))
+    # 5e death-save state: PCs at 0 HP roll saves at start of turn.
+    death_save_successes: int = 0
+    death_save_failures: int = 0
+    is_dead: bool = False
+    is_stable: bool = False
+    reaction_used: bool = False
+    damage_resistances: list = Field(default_factory=list, sa_column=Column(JSON))
+    damage_immunities: list = Field(default_factory=list, sa_column=Column(JSON))
+    damage_vulnerabilities: list = Field(default_factory=list, sa_column=Column(JSON))
+    melee_reach_ft: int = 5
+    attacks_per_action: int = 1
+    attacks_remaining_this_action: int = 0
+    sneak_attack_dice: int = 0
+    sneak_attack_used_this_turn: bool = False
+    class_features: list = Field(default_factory=list, sa_column=Column(JSON))
 
 
 class ActiveEffect(SQLModel, table=True):
