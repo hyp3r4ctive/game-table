@@ -455,11 +455,70 @@
               <option value="full">full (no shot)</option>
             </select>
           </label>
+          <label class="meta" style="font-size:0.82em" title="Ranged short/long range — leave 0 to skip range-band rules.">
+            range <input type="number" name="short_range_ft" value="0" style="width:50px; margin:0">/<input type="number" name="long_range_ft" value="0" style="width:50px; margin:0">
+          </label>
           <label style="display:inline-flex; align-items:center; gap:4px; margin:0; color:var(--text-faint); font-size:0.82em" title="Off-hand light-weapon attack: consumes bonus action instead of action. Drop the +ability mod from damage_dice unless you have Two-Weapon Fighting style.">
             <input type="checkbox" name="off_hand" value="true"> off-hand (BA)
           </label>
           <button type="submit" class="small">attack</button>
         </form>
+
+        <form method="post" action="/sessions/{{ gs.id }}/grapple" class="inline-form">
+          <input type="hidden" name="attacker_id" value="{{ lc.id }}">
+          <label>grapple</label>
+          <select name="target_id">
+            {% for t in live_characters %}{% if t.id != lc.id %}<option value="{{ t.id }}">{{ t.name }}</option>{% endif %}{% endfor %}
+          </select>
+          <button type="submit" class="small">grapple</button>
+        </form>
+
+        <form method="post" action="/sessions/{{ gs.id }}/shove" class="inline-form">
+          <input type="hidden" name="attacker_id" value="{{ lc.id }}">
+          <label>shove</label>
+          <select name="target_id">
+            {% for t in live_characters %}{% if t.id != lc.id %}<option value="{{ t.id }}">{{ t.name }}</option>{% endif %}{% endfor %}
+          </select>
+          <select name="mode">
+            <option value="prone">prone</option>
+            <option value="push">push 5ft</option>
+          </select>
+          <button type="submit" class="small">shove</button>
+        </form>
+
+        <form method="post" action="/sessions/{{ gs.id }}/use-potion" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <label>potion</label>
+          <select name="potion_type">
+            <option value="healing">healing (2d4+2)</option>
+            <option value="greater_healing">greater (4d4+4)</option>
+            <option value="superior_healing">superior (8d4+8)</option>
+            <option value="supreme_healing">supreme (10d4+20)</option>
+          </select>
+          <button type="submit" class="small">drink</button>
+        </form>
+
+        <form method="post" action="/sessions/{{ gs.id }}/skill-check" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <label>check</label>
+          <select name="skill">
+            <option>Acrobatics</option><option>Animal Handling</option><option>Arcana</option>
+            <option>Athletics</option><option>Deception</option><option>History</option>
+            <option>Insight</option><option>Intimidation</option><option>Investigation</option>
+            <option>Medicine</option><option>Nature</option><option selected>Perception</option>
+            <option>Performance</option><option>Persuasion</option><option>Religion</option>
+            <option>Sleight of Hand</option><option>Stealth</option><option>Survival</option>
+          </select>
+          <label>DC</label><input type="number" name="dc" value="12" style="width:50px">
+          <button type="submit" class="small">roll</button>
+        </form>
+
+        {% if not lc.is_enemy and is_dm %}
+        <form method="post" action="/sessions/{{ gs.id }}/inspire" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <button type="submit" class="small">{% if lc.is_inspired %}revoke{% else %}grant{% endif %} inspiration{% if lc.is_inspired %} (★){% endif %}</button>
+        </form>
+        {% endif %}
 
         {% if not lc.is_enemy %}
         <form method="post" action="/sessions/{{ gs.id }}/cast" class="inline-form cast-form" data-caster-id="{{ lc.id }}" onsubmit="return prepareCastSubmit(this)">
@@ -701,6 +760,20 @@
       this.action = `/sessions/{{ gs.id }}/seat/${seat}/override`;
     });
   </script>
+</div>
+{% endif %}
+
+{% if encounter_data %}
+<div class="panel">
+  <h3>Encounter difficulty</h3>
+  <p class="meta">{{ encounter_data.enemy_count }} enemies · raw XP {{ encounter_data.raw_xp }} × {{ '%.1f' | format(encounter_data.multiplier) }} = <strong>{{ encounter_data.adjusted_xp }} adjusted XP</strong></p>
+  <p>thresholds:
+    <span class="meta">easy {{ encounter_data.thresholds.easy }}</span> ·
+    <span class="meta">medium {{ encounter_data.thresholds.medium }}</span> ·
+    <span class="meta">hard {{ encounter_data.thresholds.hard }}</span> ·
+    <span class="meta">deadly {{ encounter_data.thresholds.deadly }}</span>
+  </p>
+  <p>current: <span class="pill {% if encounter_data.difficulty == 'deadly' %}danger{% elif encounter_data.difficulty == 'hard' %}warn{% else %}teal{% endif %}">{{ encounter_data.difficulty }}</span></p>
 </div>
 {% endif %}
 

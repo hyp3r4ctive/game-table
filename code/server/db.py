@@ -243,6 +243,7 @@ class LiveCharacter(SQLModel, table=True):
     hit_dice_used: int = 0
     hit_die: str = "d8"
     is_inspired: bool = False
+    challenge_rating: str = ""
     class_features: list = Field(default_factory=list, sa_column=Column(JSON))
 
 

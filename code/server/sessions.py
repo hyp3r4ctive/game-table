@@ -1470,8 +1470,33 @@ def view_session(
     condition_list = sorted(conditions.list_all_conditions(), key=lambda c: c["name"])
     campaign_maps = db.exec(select(Map).where(Map.campaign_id == gs.campaign_id)).all()
     active_map = db.get(Map, gs.active_map_id) if gs.active_map_id else None
-    from game.monsters import list_monsters
+    from game.monsters import list_monsters, cr_to_xp, party_thresholds, encounter_multiplier
     monsters_list = list_monsters() if is_dm else []
+    # Encounter XP calculator: sum CR-derived XP across active enemies, compute party thresholds.
+    encounter_data = None
+    if is_dm:
+        enemies = [lc for lc in lcs if lc.is_enemy and lc.is_active and not lc.is_dead]
+        pcs = [lc for lc in lcs if not lc.is_enemy and lc.is_active]
+        raw_xp = sum(cr_to_xp(lc.challenge_rating or "") for lc in enemies)
+        mult = encounter_multiplier(len(enemies))
+        adjusted_xp = int(raw_xp * mult)
+        e, m, h, d = party_thresholds([lc.level or 1 for lc in pcs])
+        if raw_xp > 0 or pcs:
+            difficulty = "trivial"
+            if adjusted_xp >= d and d > 0:
+                difficulty = "deadly"
+            elif adjusted_xp >= h and h > 0:
+                difficulty = "hard"
+            elif adjusted_xp >= m and m > 0:
+                difficulty = "medium"
+            elif adjusted_xp >= e and e > 0:
+                difficulty = "easy"
+            encounter_data = {
+                "enemy_count": len(enemies), "raw_xp": raw_xp,
+                "multiplier": mult, "adjusted_xp": adjusted_xp,
+                "thresholds": {"easy": e, "medium": m, "hard": h, "deadly": d},
+                "difficulty": difficulty,
+            }
     # Objects catalog for the spawn-object form.
     objects_list: list = []
     if is_dm:
@@ -1524,6 +1549,7 @@ def view_session(
         "concentration_by_lc": concentration_by_lc,
         "monsters": monsters_list,
         "objects_catalog": objects_list,
+        "encounter_data": encounter_data,
     })
 
 
@@ -1805,6 +1831,18 @@ def _do_attack(db_session: Session, gs: GameSession, params: dict, user: User, b
     if cover_bonus:
         mods.target_ac_bonus = (mods.target_ac_bonus or 0) + cover_bonus
         _log(db_session, gs, f"  {target.name} has {cover.replace('_', '-')} cover (+{cover_bonus} AC)")
+    # Ranged range bands: if both short/long range filled, beyond short = disadvantage,
+    # beyond long = auto-fail.
+    short_range = int(params.get("short_range_ft", 0) or 0)
+    long_range = int(params.get("long_range_ft", 0) or 0)
+    distance_for_range = int(params.get("distance_ft", 5))
+    if short_range > 0 and long_range > 0:
+        if distance_for_range > long_range:
+            _log(db_session, gs, f"{attacker.name}'s attack is beyond max range ({distance_for_range}ft > {long_range}ft) — auto-fails")
+            return
+        if distance_for_range > short_range:
+            mods.disadvantage = True
+            _log(db_session, gs, f"  long-range attack ({distance_for_range}ft > {short_range}ft) — disadvantage")
     c = db_session.get(Campaign, gs.campaign_id)
     crit_rule = rules_mod.get_rule(c, "crit_rule")
     # Flanking: melee attacker with an ally on the opposite cell of the target gets advantage.
@@ -1951,6 +1989,8 @@ def attack(
     smite_slot_level: int = Form(0),
     cover: str = Form("none"),
     off_hand: bool = Form(False),
+    short_range_ft: int = Form(0),
+    long_range_ft: int = Form(0),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ):
@@ -1962,6 +2002,7 @@ def attack(
         "damage_type": damage_type, "distance_ft": distance_ft,
         "sneak_attack": sneak_attack, "smite_slot_level": smite_slot_level,
         "cover": cover, "off_hand": off_hand,
+        "short_range_ft": short_range_ft, "long_range_ft": long_range_ft,
     }, user, bypass=set())
     db.commit()
     events.publish(session_id)
@@ -2059,6 +2100,88 @@ def shove(
                 _log(db, gs, f"  {target.name} pushed (positions unknown)")
     else:
         _log(db, gs, f"  {target.name} resists the shove")
+    db.commit()
+    events.publish(session_id)
+    return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+
+
+POTION_TABLE = {
+    "healing": ("2d4+2", "healing"),
+    "greater_healing": ("4d4+4", "greater healing"),
+    "superior_healing": ("8d4+8", "superior healing"),
+    "supreme_healing": ("10d4+20", "supreme healing"),
+}
+
+
+@router.post("/sessions/{session_id}/use-potion")
+def use_potion(
+    session_id: int,
+    actor_id: int = Form(),
+    potion_type: str = Form("healing"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    gs = _require_session(db, session_id, user)
+    lc = _require_live(db, session_id, actor_id)
+    pt = POTION_TABLE.get(potion_type.lower())
+    if not pt:
+        raise HTTPException(400, f"unknown potion: {potion_type}")
+    dice_expr, label = pt
+    _push_undo(db, gs, f"{lc.name} drinks {label} potion")
+    rolled = dice.roll(dice_expr)
+    healed = _heal_to(db, gs, lc, rolled.total)
+    _log(db, gs, f"{lc.name} drinks potion of {label} ({dice_expr}={rolled.total}); heals {healed} (HP {lc.current_hp}/{lc.max_hp})")
+    db.commit()
+    events.publish(session_id)
+    return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+
+
+@router.post("/sessions/{session_id}/use-scroll")
+def use_scroll(
+    session_id: int,
+    actor_id: int = Form(),
+    spell_name: str = Form(),
+    target_ids: str = Form(""),
+    aoe_x: Optional[int] = Form(None),
+    aoe_y: Optional[int] = Form(None),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Cast a spell from a scroll without consuming a slot. If the spell level
+    exceeds what the actor can naturally cast, ability check 10 + spell level.
+    """
+    gs = _require_session(db, session_id, user)
+    lc = _require_live(db, session_id, actor_id)
+    spell = spells.get_spell(spell_name, db, gs.campaign_id)
+    if not spell:
+        raise HTTPException(400, f"unknown spell: {spell_name}")
+    spell_level = int(spell.get("level", 0))
+    # Ability check: if scroll level exceeds caster's max known slot level
+    max_slot_known = max((int(k) for k, v in (lc.spell_slots or {}).items() if v >= 0), default=0)
+    if spell_level > max_slot_known:
+        char = db.get(Character, lc.source_character_id) if lc.source_character_id else None
+        _, _, scm = _spellcasting_modifiers(lc, char)
+        dc = 10 + spell_level
+        check = dice.roll_d20(scm)
+        if check.total < dc:
+            _log(db, gs, f"{lc.name} fumbles scroll of {spell['name']}: ability check {check.total} < DC {dc} — scroll consumed without effect")
+            db.commit()
+            events.publish(session_id)
+            return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+        _log(db, gs, f"{lc.name} masters scroll of {spell['name']}: ability check {check.total} ≥ DC {dc}")
+    # Resolve cast as if normal, but skip slot consumption (slot_level 0 maps to spell's level for resolution).
+    cast_params = {
+        "spell_name": spell_name, "caster_id": actor_id, "slot_level": max(1, spell_level),
+        "target_ids": target_ids, "aoe_x": aoe_x, "aoe_y": aoe_y,
+        "aoe_dx": 1, "aoe_dy": 0, "wall_x2": None, "wall_y2": None,
+        "cover": "none",
+        "spell_save_dc": _spellcasting_modifiers(lc, db.get(Character, lc.source_character_id) if lc.source_character_id else None)[0],
+        "spell_attack_modifier": _spellcasting_modifiers(lc, db.get(Character, lc.source_character_id) if lc.source_character_id else None)[1],
+        "spellcasting_modifier": _spellcasting_modifiers(lc, db.get(Character, lc.source_character_id) if lc.source_character_id else None)[2],
+        "enforce_slots": False, "scroll": True,
+    }
+    _log(db, gs, f"{lc.name} reads a scroll of {spell['name']}")
+    _do_cast(db, gs, cast_params, user, bypass=set())
     db.commit()
     events.publish(session_id)
     return RedirectResponse(f"/sessions/{session_id}", status_code=303)
@@ -2395,7 +2518,10 @@ def _do_cast(db_session: Session, gs: GameSession, params: dict, user: User, byp
         _log(db_session, gs, f"warning: {caster.name} casts {spell['name']}: {label}")
 
     enforce_slots = bool(params.get("enforce_slots", False))
-    if spell["level"] > 0 and enforce_slots:
+    is_scroll = bool(params.get("scroll"))
+    if is_scroll:
+        pass  # scrolls don't consume slots
+    elif spell["level"] > 0 and enforce_slots:
         slots = dict(caster.spell_slots or {})
         key = str(slot_level)
         if slots.get(key, 0) <= 0 and "slots" not in bypass:
@@ -2948,6 +3074,7 @@ def spawn_monster(
             melee_reach_ft=monster.get("melee_reach_ft", 5),
             attacks_per_action=monster.get("attacks_per_action", 1),
             darkvision_ft=monster.get("darkvision_ft", 0),
+            challenge_rating=str(monster.get("challenge_rating", "")),
         )
         db.add(lc)
         spawned += 1
