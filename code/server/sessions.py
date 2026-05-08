@@ -1520,6 +1520,7 @@ def view_session(
             }
     # Objects catalog for the spawn-object form.
     objects_list: list = []
+    items_list: list = []
     if is_dm:
         try:
             import json as _j
@@ -1531,6 +1532,14 @@ def view_session(
             )
         except Exception:
             objects_list = []
+        try:
+            item_data = _j.loads((_P(__file__).parent / "data" / "items.json").read_text())
+            items_list = sorted(
+                ({"key": k, **v} for k, v in item_data.items()),
+                key=lambda i: (i.get("category", ""), i.get("name", ""))
+            )
+        except Exception:
+            items_list = []
     all_effs = _all_active_effects_for_session(db, gs.id)
     effects_by_target: dict = {}
     for eff in all_effs:
@@ -1570,6 +1579,7 @@ def view_session(
         "concentration_by_lc": concentration_by_lc,
         "monsters": monsters_list,
         "objects_catalog": objects_list,
+        "items_catalog": items_list,
         "encounter_data": encounter_data,
     })
 
@@ -1602,6 +1612,33 @@ def start_combat(
     db.commit()
     events.publish(session_id)
     return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+
+
+@router.post("/sessions/{session_id}/combat/surprise")
+async def set_surprised(
+    session_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """DM-only: mark a list of LC IDs as surprised. Their first turn is skipped
+    (action_used + bonus_action_used + movement budget all pre-consumed). Surprise
+    lifts at end of their first turn.
+    body = {lc_ids: [int, ...]}
+    """
+    gs = _require_session(db, session_id, user, dm_only=True)
+    body = await request.json()
+    lc_ids = [int(x) for x in (body.get("lc_ids") or [])]
+    gs.surprised_lc_ids = lc_ids
+    db.add(gs)
+    if lc_ids:
+        names = ", ".join(
+            db.get(LiveCharacter, i).name for i in lc_ids if db.get(LiveCharacter, i)
+        )
+        _log(db, gs, f"Surprised: {names}")
+    db.commit()
+    events.publish(session_id)
+    return {"ok": True}
 
 
 @router.post("/sessions/{session_id}/combat/end")
@@ -1663,6 +1700,13 @@ def next_turn(
         starting_lc.reaction_used = False
         starting_lc.attacks_remaining_this_action = 0
         starting_lc.sneak_attack_used_this_turn = False
+        if starting_lc.id in (gs.surprised_lc_ids or []):
+            _log(db, gs, f"  {starting_lc.name} is surprised — first turn skipped")
+            gs.action_used = True
+            gs.bonus_action_used = True
+            starting_lc.reaction_used = True
+            gs.surprised_lc_ids = [i for i in (gs.surprised_lc_ids or []) if i != starting_lc.id]
+            db.add(gs)
         db.add(starting_lc)
         _roll_death_save(db, gs, starting_lc)
         _aura_check_turn_start(db, gs, starting_lc)
@@ -2132,6 +2176,88 @@ POTION_TABLE = {
     "superior_healing": ("8d4+8", "superior healing"),
     "supreme_healing": ("10d4+20", "supreme healing"),
 }
+
+
+@router.post("/sessions/{session_id}/bardic-inspire")
+def bardic_inspire(
+    session_id: int,
+    actor_id: int = Form(),
+    target_id: int = Form(),
+    die_size: int = Form(6),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Bard grants a Bardic Inspiration die to an ally. Consumes one use of
+    the bard's bardic_inspiration resource. Target keeps the die as a self-effect
+    until they spend it via /spend-bardic.
+    """
+    from db import ActiveEffect
+    gs = _require_session(db, session_id, user)
+    bard = _require_live(db, session_id, actor_id)
+    target = _require_live(db, session_id, target_id)
+    if not _can_act(gs, bard, user):
+        raise HTTPException(403)
+    if die_size not in (6, 8, 10, 12):
+        raise HTTPException(400, "die_size must be 6/8/10/12")
+    res = dict(bard.resources or {})
+    entry = dict(res.get("bardic_inspiration") or {"current": 0, "max": 0, "label": "Bardic Inspiration", "recharge": "long_rest"})
+    if entry.get("current", 0) <= 0:
+        raise HTTPException(400, "no Bardic Inspiration uses remaining")
+    entry["current"] -= 1
+    res["bardic_inspiration"] = entry
+    bard.resources = res
+    db.add(bard)
+    flags = _consume_turn_resource(db, gs, bard, "bonus_action")
+    if flags:
+        _log(db, gs, f"  warning: {flags[0]}")
+    eff = ActiveEffect(
+        session_id=session_id, target_live_id=target.id, caster_live_id=bard.id,
+        spell_key="bardic_inspiration",
+        name=f"Bardic Inspiration (1d{die_size})",
+        description=f"Roll 1d{die_size} and add to one attack roll, save, or ability check.",
+        handler_key="", is_concentration=False,
+        duration_rounds=100, duration_basis="caster_end_of_turn",
+        payload={"die": f"1d{die_size}"},
+    )
+    db.add(eff)
+    _log(db, gs, f"{bard.name} inspires {target.name} (1d{die_size}). Pool: {entry['current']}/{entry.get('max', 0)}")
+    db.commit()
+    events.publish(session_id)
+    return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+
+
+@router.post("/sessions/{session_id}/spend-bardic")
+def spend_bardic(
+    session_id: int,
+    actor_id: int = Form(),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Spend a Bardic Inspiration die: roll it, log the result, remove the effect.
+    Player applies the rolled value to whichever check/attack/save they're making
+    (resolved by DM in narrative)."""
+    from db import ActiveEffect
+    gs = _require_session(db, session_id, user)
+    lc = _require_live(db, session_id, actor_id)
+    if not _can_act(gs, lc, user):
+        raise HTTPException(403)
+    eff = db.exec(
+        select(ActiveEffect).where(
+            ActiveEffect.session_id == session_id,
+            ActiveEffect.target_live_id == lc.id,
+            ActiveEffect.spell_key == "bardic_inspiration",
+        )
+    ).first()
+    if not eff:
+        raise HTTPException(400, "no Bardic Inspiration die to spend")
+    die_expr = (eff.payload or {}).get("die", "1d6")
+    rolled = dice.roll(die_expr)
+    _log(db, gs, f"{lc.name} spends Bardic Inspiration ({die_expr}={rolled.total}) — add to one attack/save/check")
+    ctx = effects_mod.EffectContext(db=db, session_id=session_id)
+    effects_mod.remove_effect(db, eff, ctx)
+    db.commit()
+    events.publish(session_id)
+    return RedirectResponse(f"/sessions/{session_id}", status_code=303)
 
 
 @router.post("/sessions/{session_id}/use-potion")
@@ -3152,6 +3278,53 @@ def spawn_enemy(
     )
     db.add(lc)
     _log(db, gs, f"Enemy spawned: {name} (HP {max_hp}, AC {armor_class})")
+    db.commit()
+    events.publish(session_id)
+    return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+
+
+@router.post("/sessions/{session_id}/apply-item")
+def apply_item(
+    session_id: int,
+    target_id: int = Form(),
+    item_key: str = Form(),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """DM-only: attach a magic item's stat_buff effect to an LC. The buff
+    persists until removed via the active-effects panel.
+    """
+    from db import ActiveEffect
+    import json as _json
+    from pathlib import Path as _Path
+    gs = _require_session(db, session_id, user, dm_only=True)
+    target = _require_live(db, session_id, target_id)
+    catalog_path = _Path(__file__).parent / "data" / "items.json"
+    try:
+        catalog = _json.loads(catalog_path.read_text())
+    except FileNotFoundError:
+        raise HTTPException(500, "items catalog missing")
+    item = catalog.get(item_key)
+    if not item:
+        raise HTTPException(400, f"unknown item: {item_key}")
+    eff = ActiveEffect(
+        session_id=session_id, target_live_id=target.id, caster_live_id=None,
+        spell_key=item_key,
+        name=item.get("name", item_key),
+        description=item.get("description", ""),
+        handler_key="stat_buff" if item.get("stat_buff") else "",
+        is_concentration=False,
+        duration_rounds=None,  # permanent until removed
+        duration_basis="caster_end_of_turn",
+        payload=item.get("stat_buff") or {},
+    )
+    db.add(eff)
+    db.flush()
+    handler = effects_mod.get_handler(eff.handler_key)
+    if handler:
+        ctx = effects_mod.EffectContext(db=db, session_id=session_id)
+        handler.on_apply(ctx, eff)
+    _log(db, gs, f"DM equips {target.name} with {item.get('name', item_key)}")
     db.commit()
     events.publish(session_id)
     return RedirectResponse(f"/sessions/{session_id}", status_code=303)

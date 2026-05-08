@@ -140,6 +140,7 @@ class GameSession(SQLModel, table=True):
     pending_walk: dict = Field(default_factory=dict, sa_column=Column(JSON))
     pending_aoe: dict = Field(default_factory=dict, sa_column=Column(JSON))
     pending_reaction: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    surprised_lc_ids: list = Field(default_factory=list, sa_column=Column(JSON))
     undo_stack: list = Field(default_factory=list, sa_column=Column(JSON))
     started_at: datetime = Field(default_factory=datetime.utcnow)
     ended_at: Optional[datetime] = None

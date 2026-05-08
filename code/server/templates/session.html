@@ -863,6 +863,19 @@
     <button type="submit" class="small">spawn object</button>
   </form>
   {% endif %}
+  {% if items_catalog %}
+  <form method="post" action="/sessions/{{ gs.id }}/apply-item" class="inline-form" style="margin-top:8px">
+    <span class="meta">item:</span>
+    <select name="item_key" style="min-width:200px">
+      {% for it in items_catalog %}<option value="{{ it.key }}">[{{ it.category }}] {{ it.name }} ({{ it.rarity }})</option>{% endfor %}
+    </select>
+    <label>to</label>
+    <select name="target_id">
+      {% for lc in live_characters %}<option value="{{ lc.id }}">{{ lc.name }}</option>{% endfor %}
+    </select>
+    <button type="submit" class="small">equip</button>
+  </form>
+  {% endif %}
 </div>
 
 <div class="panel">

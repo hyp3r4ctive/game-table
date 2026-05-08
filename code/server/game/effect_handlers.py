@@ -279,6 +279,26 @@ class AuraDamageHandler(effects.EffectHandler):
         ctx.db.add(effect)
 
 
+@effects.register("stat_buff")
+class StatBuffHandler(effects.EffectHandler):
+    """Generic +N to attack/damage/AC/saves. Used by magic weapons, ring of
+    protection, cloak of protection, bracers of defense, etc.
+    payload: {to_hit_bonus, damage_bonus, ac_bonus, save_bonus}.
+    """
+    def on_attack_roll(self, ctx, effect, roll: effects.AttackRoll):
+        p = effect.payload or {}
+        if roll.attacker_id == effect.target_live_id:
+            roll.bonus += int(p.get("to_hit_bonus", 0))
+            roll.damage_bonus += int(p.get("damage_bonus", 0))
+        if roll.target_id == effect.target_live_id:
+            roll.target_ac_bonus += int(p.get("ac_bonus", 0))
+
+    def on_save_roll(self, ctx, effect, roll: effects.SaveRoll):
+        p = effect.payload or {}
+        if roll.saver_id == effect.target_live_id:
+            roll.bonus += int(p.get("save_bonus", 0))
+
+
 @effects.register("damage_resistance")
 class DamageResistanceHandler(effects.EffectHandler):
     """Adds payload.types to lc.damage_resistances on apply; removes on remove.
