@@ -46,6 +46,15 @@
     {% if c.inspiration %}<div style="color:#d4a017">★ inspired</div>{% endif %}
   </div>
   <div class="hp-bar" style="margin-top: 8px"><div class="hp-fill {% if hp_pct < 30 %}low{% endif %}" style="width: {{ hp_pct }}%"></div></div>
+  <div class="row" style="margin-top:10px; gap:18px; flex-wrap:wrap; font-size:0.9em">
+    <div><strong>reach</strong> {{ c.melee_reach_ft or 5 }} ft</div>
+    <div><strong>attacks/action</strong> {{ c.attacks_per_action or 1 }}</div>
+    {% if c.sneak_attack_dice %}<div><strong>sneak attack</strong> {{ c.sneak_attack_dice }}d6</div>{% endif %}
+    {% if c.damage_resistances %}<div><strong>resist</strong> <span class="meta">{{ c.damage_resistances | join(', ') }}</span></div>{% endif %}
+    {% if c.damage_immunities %}<div><strong>immune</strong> <span class="meta">{{ c.damage_immunities | join(', ') }}</span></div>{% endif %}
+    {% if c.damage_vulnerabilities %}<div><strong>vulnerable</strong> <span class="meta">{{ c.damage_vulnerabilities | join(', ') }}</span></div>{% endif %}
+    {% if c.class_features %}<div><strong>features</strong> <span class="meta">{{ c.class_features | join(', ') }}</span></div>{% endif %}
+  </div>
 </div>
 
 <div class="stat-grid">

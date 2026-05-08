@@ -69,6 +69,20 @@ RULE_DEFINITIONS: dict = {
         ],
         "category": "combat",
     },
+    "crit_fumble_table": {
+        "label": "Critical fumble table",
+        "type": "bool",
+        "default": False,
+        "category": "combat",
+        "description": "Natural 1 on attack rolls triggers a d6 fumble (slip, drop weapon, etc.). Logged as a narrative consequence; mechanical enforcement is up to the DM.",
+    },
+    "pack_tactics_auto": {
+        "label": "Pack Tactics auto-advantage",
+        "type": "bool",
+        "default": False,
+        "category": "combat",
+        "description": "Creatures with 'pack_tactics' in class_features get advantage on attack rolls when at least one ally is adjacent to the target.",
+    },
     "diagonal_cost": {
         "label": "Diagonal cost (square grid)",
         "type": "choice",

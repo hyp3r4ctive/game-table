@@ -143,6 +143,17 @@
   <label>hit die<input type="text" name="hit_die" placeholder="d8" value="{{ c.hit_die if c else 'd8' }}"></label>
   <label>hit dice used<input type="number" name="hit_dice_used" min="0" value="{{ c.hit_dice_used if c else 0 }}"></label>
 </div>
+<div class="form-row" style="margin-top:8px">
+  <label>melee reach (ft)<input type="number" name="melee_reach_ft" min="5" step="5" value="{{ c.melee_reach_ft if c else 5 }}"></label>
+  <label>attacks per action<input type="number" name="attacks_per_action" min="1" value="{{ c.attacks_per_action if c else 1 }}"></label>
+  <label>sneak attack (Nd6)<input type="number" name="sneak_attack_dice" min="0" value="{{ c.sneak_attack_dice if c else 0 }}"></label>
+</div>
+<div class="form-row" style="margin-top:8px">
+  <label>damage resistances<input type="text" name="damage_resistances_csv" placeholder="fire, cold" value="{{ (c.damage_resistances | join(', ')) if c and c.damage_resistances else '' }}"></label>
+  <label>damage immunities<input type="text" name="damage_immunities_csv" placeholder="poison" value="{{ (c.damage_immunities | join(', ')) if c and c.damage_immunities else '' }}"></label>
+  <label>damage vulnerabilities<input type="text" name="damage_vulnerabilities_csv" placeholder="radiant" value="{{ (c.damage_vulnerabilities | join(', ')) if c and c.damage_vulnerabilities else '' }}"></label>
+</div>
+<label style="margin-top:8px">class features (comma-separated keys: divine_smite, extra_attack, ...)<input type="text" name="class_features_csv" value="{{ (c.class_features | join(', ')) if c and c.class_features else '' }}"></label>
 </details>
 
 <details>

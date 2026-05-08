@@ -20,6 +20,7 @@ class AttackResult:
     description: str = ""
     image_hit: bool = False  # Mirror Image: attack hit an illusory duplicate (no damage to caster)
     effective_total: int = 0  # d20 + modifier + extra dice (the number compared vs effective_ac)
+    fumble: bool = False  # natural-1 (attack roll's chosen die was a 1)
 
 
 @dataclass
@@ -117,6 +118,7 @@ def make_attack(
     extra_damage_on_hit: list = None,
     target_ac_bonus: int = 0,
     image_redirect_ac: Optional[int] = None,
+    crit_rule: str = "double_dice",
 ) -> AttackResult:
     """Resolve a single attack roll and damage if it hits."""
     attacker_conditions = attacker_conditions or []
@@ -191,6 +193,7 @@ def make_attack(
         critical=is_crit,
         image_hit=(hit and image_redirect_ac is not None),
         effective_total=effective_attack_total,
+        fumble=is_fumble,
     )
 
     if result.image_hit:
@@ -200,8 +203,19 @@ def make_attack(
     if hit:
         if is_crit:
             count, sides, modifier = dice.parse_dice(damage_dice)
-            crit_dice = f"{count * 2}d{sides}{'+' if modifier >= 0 else '-'}{abs(modifier)}"
-            damage_roll = dice.roll(crit_dice)
+            if crit_rule == "max_then_dice":
+                # Maxed first set + rolled second set + modifier. Brutal homebrew.
+                max_part = count * sides
+                rolled = dice.roll(f"{count}d{sides}")
+                damage_roll = dice.RollResult(
+                    expression=f"crit({damage_dice}: max{max_part}+{rolled.expression}{'+' if modifier >= 0 else '-'}{abs(modifier)})",
+                    rolls=[max_part] + list(rolled.rolls),
+                    modifier=modifier,
+                    total=max_part + rolled.total + modifier,
+                )
+            else:
+                crit_dice = f"{count * 2}d{sides}{'+' if modifier >= 0 else '-'}{abs(modifier)}"
+                damage_roll = dice.roll(crit_dice)
         else:
             damage_roll = dice.roll(damage_dice)
         result.damage_rolls.append(damage_roll)

@@ -263,20 +263,119 @@ class HpBuffHandler(effects.EffectHandler):
         ctx.db.add(lc)
 
 
+@effects.register("aura_damage")
+class AuraDamageHandler(effects.EffectHandler):
+    """Marker for damaging auras around a caster (Spirit Guardians, Sickening Radiance,
+    Cloud of Daggers, etc.). The actual triggers fire from sessions: per-step entry
+    into the aura via _do_walk, and per-turn-start via the turn-advance hooks.
+    payload: {radius_ft, dice, type, save_ability?, save_dc?, hostile_only?, on_apply_dc?}.
+    """
+    def on_apply(self, ctx, effect):
+        # Inject the caster's spell save DC into payload.save_dc if not set.
+        payload = dict(effect.payload or {})
+        if payload.get("save_ability") and "save_dc" not in payload:
+            payload["save_dc"] = payload.get("on_apply_dc", 13)
+        effect.payload = payload
+        ctx.db.add(effect)
+
+
+@effects.register("damage_resistance")
+class DamageResistanceHandler(effects.EffectHandler):
+    """Adds payload.types to lc.damage_resistances on apply; removes on remove.
+    Used by Stoneskin, Resistance (cantrip), etc.
+    """
+
+    def on_apply(self, ctx, effect):
+        from db import LiveCharacter
+        if effect.target_live_id is None:
+            return
+        lc = ctx.db.get(LiveCharacter, effect.target_live_id)
+        if not lc:
+            return
+        types = (effect.payload or {}).get("types") or []
+        existing = list(lc.damage_resistances or [])
+        added = [t for t in types if t not in existing]
+        if added:
+            lc.damage_resistances = existing + added
+            ctx.db.add(lc)
+
+    def on_remove(self, ctx, effect):
+        from db import LiveCharacter
+        if effect.target_live_id is None:
+            return
+        lc = ctx.db.get(LiveCharacter, effect.target_live_id)
+        if not lc:
+            return
+        types = (effect.payload or {}).get("types") or []
+        if not types:
+            return
+        existing = list(lc.damage_resistances or [])
+        new = [t for t in existing if t not in types]
+        if len(new) != len(existing):
+            lc.damage_resistances = new
+            ctx.db.add(lc)
+
+
+@effects.register("death_ward")
+class DeathWardHandler(effects.EffectHandler):
+    """Marker handler. The actual preempt-on-zero logic lives in sessions
+    ._apply_damage_to: it checks for death_ward on the target before applying
+    a fatal hit and clamps to 1 HP, consuming the effect.
+    """
+    pass
+
+
+@effects.register("smite_on_hit")
+class SmiteOnHitHandler(effects.EffectHandler):
+    """Marker for primed smites (Searing/Wrathful/Thunderous/Branding/Banishing).
+    Mechanics live in sessions._do_attack: it picks up the attacker's smite_on_hit
+    effects before the attack, appends the payload's damage dice to extra_damage_on_hit,
+    and consumes the effect after the next melee hit lands.
+    """
+
+    def on_attack_roll(self, ctx, effect, roll: effects.AttackRoll):
+        # No-op here: the caller in sessions handles dice append + consumption,
+        # because the "consume on hit" semantics need post-resolution access.
+        pass
+
+
 @effects.register("wall_damage")
 class WallDamageHandler(effects.EffectHandler):
     """Damage when crossing a wall segment (Wall of Fire, Wall of Thorns, Blade Barrier).
 
-    payload: {"dice": "5d8", "type": "fire"}. Effect's area: {shape: "wall", points: [[x1,y1],[x2,y2]]}.
+    payload: {"dice": "5d8", "type": "fire", "save"?: {"ability": "dex", "dc": int}}.
+    Effect's area: {shape: "wall", points: [[x1,y1],[x2,y2]]}.
     Walls don't block movement unless payload.blocks_movement=True (see _do_walk).
-    Damage fires once per step that crosses the wall segment.
+    Damage fires once per step that crosses the wall segment. If a save is set,
+    success halves the damage.
     """
 
     def on_movement_step(self, ctx, effect, step: effects.MovementStep):
-        from . import dice
+        from . import dice, combat
+        from db import LiveCharacter
         payload = effect.payload or {}
         roll = dice.roll(payload.get("dice", "5d8"))
-        step.extra_damage.append((roll.total, payload.get("type", "fire"), effect.caster_live_id))
+        amount = roll.total
+        save = payload.get("save")
+        if save and isinstance(save, dict):
+            mover = ctx.db.get(LiveCharacter, step.mover_id) if step.mover_id else None
+            if mover:
+                ability = (save.get("ability") or "dexterity").lower()
+                if ability in ("dex", "str", "con", "int", "wis", "cha"):
+                    map_ab = {"dex": "dexterity", "str": "strength", "con": "constitution",
+                              "int": "intelligence", "wis": "wisdom", "cha": "charisma"}
+                    ability = map_ab[ability]
+                dc = int(save.get("dc", 13))
+                score = getattr(mover, ability, 10)
+                mod = (score - 10) // 2
+                if ability in (mover.saving_throw_profs or []):
+                    pb = 2 + max(0, ((mover.level or 1) - 1) // 4)
+                    mod += pb
+                sv = combat.make_save(mover.name, ability, mod, dc,
+                                       [c["name"] for c in (mover.conditions or [])])
+                if sv.success:
+                    amount = amount // 2
+        step.extra_damage.append((amount, payload.get("type", "fire"), effect.caster_live_id))
 
 
 @effects.register("spike_growth")

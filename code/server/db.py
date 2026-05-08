@@ -46,6 +46,13 @@ class Character(SQLModel, table=True):
     darkvision_ft: int = 0
     vision_normal_ft: int = 0
     light_emission_ft: int = 0
+    melee_reach_ft: int = 5
+    attacks_per_action: int = 1
+    sneak_attack_dice: int = 0
+    damage_resistances: list = Field(default_factory=list, sa_column=Column(JSON))
+    damage_immunities: list = Field(default_factory=list, sa_column=Column(JSON))
+    damage_vulnerabilities: list = Field(default_factory=list, sa_column=Column(JSON))
+    class_features: list = Field(default_factory=list, sa_column=Column(JSON))
     saving_throw_profs: list = Field(default_factory=list, sa_column=Column(JSON))
     skill_profs: list = Field(default_factory=list, sa_column=Column(JSON))
     skill_expertises: list = Field(default_factory=list, sa_column=Column(JSON))

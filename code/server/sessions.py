@@ -143,6 +143,101 @@ def _all_active_effects_for_session(db_session: Session, session_id: int) -> lis
     ).all()
 
 
+def _apply_aura_damage(db_session: Session, gs: GameSession,
+                       eff, target: LiveCharacter, caster: LiveCharacter,
+                       trigger_label: str) -> None:
+    """Roll save (if specified) and apply aura damage to target. Used by Spirit
+    Guardians, Sickening Radiance, etc. Save halves on success."""
+    if target.is_dead or (target.current_hp or 0) <= 0:
+        return
+    payload = eff.payload or {}
+    damage_dice = payload.get("dice", "3d8")
+    damage_type = payload.get("type", "radiant")
+    save_ability = payload.get("save_ability")
+    save_dc = int(payload.get("save_dc", 13))
+    roll = dice.roll(damage_dice)
+    amount = roll.total
+    save_note = ""
+    if save_ability:
+        ability = _ability_full_name(save_ability)
+        mod = _ability_mod(getattr(target, ability, 10))
+        if ability in (target.saving_throw_profs or []):
+            mod += _proficiency_bonus(target.level or 1)
+        sv_mods = effects_mod.collect_save_modifiers(db_session, gs.id, target.id, ability)
+        sv = combat.make_save(
+            target.name, ability, mod, save_dc,
+            [c["name"] for c in (target.conditions or [])],
+            extra_dice=list(sv_mods.extra_dice),
+            subtract_dice=list(sv_mods.subtract_dice),
+            extra_advantage=sv_mods.advantage,
+            extra_disadvantage=sv_mods.disadvantage,
+            bonus=sv_mods.bonus,
+        )
+        if sv.success:
+            amount = amount // 2
+        save_note = f" ({sv.description})"
+    _log(db_session, gs, f"  {eff.name} aura ({trigger_label}): {target.name} takes {amount} {damage_type}{save_note}")
+    _apply_damage_to(db_session, gs, target, amount, damage_type,
+                     source_attacker_id=caster.id)
+
+
+def _list_aura_effects(db_session: Session, gs: GameSession) -> list:
+    """All active aura_damage effects in this session, regardless of which LC they're attached to."""
+    from db import ActiveEffect
+    return list(db_session.exec(
+        select(ActiveEffect).where(
+            ActiveEffect.session_id == gs.id,
+            ActiveEffect.handler_key == "aura_damage",
+        )
+    ).all())
+
+
+def _aura_check_step(db_session: Session, gs: GameSession,
+                     mover: LiveCharacter, prev_xy: tuple, new_xy: tuple) -> None:
+    """Fire auras when the mover crosses from outside-radius to inside-radius
+    (entry trigger per RAW Spirit Guardians)."""
+    if mover.is_dead:
+        return
+    active_map = db_session.get(Map, gs.active_map_id) if gs.active_map_id else None
+    fps = (active_map.feet_per_square if active_map else 5) or 5
+    for eff in _list_aura_effects(db_session, gs):
+        if eff.caster_live_id == mover.id:
+            continue
+        caster = db_session.get(LiveCharacter, eff.caster_live_id) if eff.caster_live_id else None
+        if not caster or caster.is_dead or caster.position_x is None:
+            continue
+        payload = eff.payload or {}
+        if payload.get("hostile_only", True) and mover.is_enemy == caster.is_enemy:
+            continue
+        radius_cells = max(1, int(payload.get("radius_ft", 15)) // fps)
+        prev_in = max(abs(caster.position_x - prev_xy[0]), abs(caster.position_y - prev_xy[1])) <= radius_cells
+        new_in = max(abs(caster.position_x - new_xy[0]), abs(caster.position_y - new_xy[1])) <= radius_cells
+        if (not prev_in) and new_in:
+            _apply_aura_damage(db_session, gs, eff, mover, caster, "entered area")
+
+
+def _aura_check_turn_start(db_session: Session, gs: GameSession,
+                           starting_lc: LiveCharacter) -> None:
+    """Fire auras on the LC if they start their turn within an aura's radius."""
+    if starting_lc.is_dead or starting_lc.position_x is None:
+        return
+    active_map = db_session.get(Map, gs.active_map_id) if gs.active_map_id else None
+    fps = (active_map.feet_per_square if active_map else 5) or 5
+    for eff in _list_aura_effects(db_session, gs):
+        if eff.caster_live_id == starting_lc.id:
+            continue
+        caster = db_session.get(LiveCharacter, eff.caster_live_id) if eff.caster_live_id else None
+        if not caster or caster.is_dead or caster.position_x is None:
+            continue
+        payload = eff.payload or {}
+        if payload.get("hostile_only", True) and starting_lc.is_enemy == caster.is_enemy:
+            continue
+        radius_cells = max(1, int(payload.get("radius_ft", 15)) // fps)
+        if max(abs(caster.position_x - starting_lc.position_x),
+               abs(caster.position_y - starting_lc.position_y)) <= radius_cells:
+            _apply_aura_damage(db_session, gs, eff, starting_lc, caster, "starts turn")
+
+
 def _consume_mirror_image(db_session: Session, gs: GameSession, lc: LiveCharacter) -> None:
     """Decrement the images count on the lc's mirror_image effect; remove if 0."""
     from db import ActiveEffect
@@ -192,6 +287,21 @@ def _apply_damage_to(db_session: Session, gs: GameSession, lc: LiveCharacter,
     persistent = _persistent_death(db_session, gs)
     threshold = _death_failure_threshold(persistent)
     pre_hp = lc.current_hp or 0
+    # Death Ward: would-be drop to 0 HP becomes a clamp at 1 HP; consume the effect.
+    death_ward = next((e for e in effects_mod.list_effects_on(db_session, gs.id, lc.id)
+                       if e.handler_key == "death_ward"), None)
+    if death_ward and pre_hp > 0:
+        provisional = pre_hp - amount
+        if provisional <= 0:
+            taken_clamped = max(0, pre_hp - 1)
+            lc.current_hp = 1
+            db_session.add(lc)
+            ctx = effects_mod.EffectContext(db=db_session, session_id=gs.id)
+            effects_mod.remove_effect(db_session, death_ward, ctx)
+            _log(db_session, gs, f"  {lc.name}: Death Ward triggers — HP clamps to 1 (would have died)")
+            if taken_clamped > 0:
+                _check_concentration_on_damage(db_session, gs, lc, taken_clamped)
+            return taken_clamped
     new_hp, new_temp, taken = combat.apply_damage(
         pre_hp, lc.temp_hp, lc.max_hp,
         [combat.DamageInstance(amount=amount, type=dmg_type)],
@@ -611,7 +721,20 @@ def _resolve_reaction(db_session: Session, gs: GameSession, user: User,
             _log(db_session, gs, f"  {reactor.name} reacts with {spell['name']} (slot {slot_level})")
 
             if kind == "spell_cast" and spell_key == "counterspell":
-                outcome["cancel_action"] = True
+                original_level = int(pr.get("trigger_data", {}).get("spell_level", 1))
+                if slot_level >= original_level:
+                    outcome["cancel_action"] = True
+                    _log(db_session, gs, f"  Counterspell auto-counters (slot {slot_level} ≥ spell level {original_level})")
+                else:
+                    src_char = db_session.get(Character, reactor.source_character_id) if reactor.source_character_id else None
+                    _, _, scm = _spellcasting_modifiers(reactor, src_char)
+                    dc = 10 + original_level
+                    check = dice.roll_d20(scm)
+                    if check.total >= dc:
+                        outcome["cancel_action"] = True
+                        _log(db_session, gs, f"  Counterspell ability check: {check.total} ≥ DC {dc} — countered")
+                    else:
+                        _log(db_session, gs, f"  Counterspell ability check: {check.total} < DC {dc} — fails, spell proceeds")
             elif kind == "attack_hit" and spell_key == "shield":
                 outcome["target_ac_bonus"] = (outcome.get("target_ac_bonus", 0) + 5)
                 _apply_spell_effects(db_session, gs, spell, reactor, [reactor],
@@ -1111,6 +1234,13 @@ def start_session(
             is_enemy=False,
             spell_slots=_default_spell_slots(char.level),
             saving_throw_profs=list(char.saving_throw_profs or []),
+            damage_resistances=list(getattr(char, "damage_resistances", []) or []),
+            damage_immunities=list(getattr(char, "damage_immunities", []) or []),
+            damage_vulnerabilities=list(getattr(char, "damage_vulnerabilities", []) or []),
+            class_features=list(getattr(char, "class_features", []) or []),
+            melee_reach_ft=getattr(char, "melee_reach_ft", 5) or 5,
+            attacks_per_action=getattr(char, "attacks_per_action", 1) or 1,
+            sneak_attack_dice=getattr(char, "sneak_attack_dice", 0) or 0,
             position_x=2 + i,
             position_y=2,
             darkvision_ft=getattr(char, "darkvision_ft", 0) or 0,
@@ -1259,6 +1389,8 @@ def view_session(
     condition_list = sorted(conditions.list_all_conditions(), key=lambda c: c["name"])
     campaign_maps = db.exec(select(Map).where(Map.campaign_id == gs.campaign_id)).all()
     active_map = db.get(Map, gs.active_map_id) if gs.active_map_id else None
+    from game.monsters import list_monsters
+    monsters_list = list_monsters() if is_dm else []
     all_effs = _all_active_effects_for_session(db, gs.id)
     effects_by_target: dict = {}
     for eff in all_effs:
@@ -1268,6 +1400,19 @@ def view_session(
             "handler_key": eff.handler_key, "caster_live_id": eff.caster_live_id,
         })
     my_lc_ids = [lc.id for lc in lcs if lc.owner_id == user.id]
+    # Per-LC spellcasting modifiers for cast form auto-fill (DC / +atk / +mod).
+    casting_mods_by_lc: dict = {}
+    for lc in lcs:
+        if lc.is_enemy:
+            continue
+        src_char = db.get(Character, lc.source_character_id) if lc.source_character_id else None
+        save_dc, atk_mod, scm = _spellcasting_modifiers(lc, src_char)
+        casting_mods_by_lc[lc.id] = {"dc": save_dc, "atk_mod": atk_mod, "scm": scm}
+    # Per-LC concentration: which effect is each LC currently concentrating on?
+    concentration_by_lc: dict = {}
+    for eff in all_effs:
+        if eff.is_concentration and eff.caster_live_id:
+            concentration_by_lc[eff.caster_live_id] = eff.name
     return templates.TemplateResponse(request, "session.html", {
         "user": user,
         "campaign": campaign,
@@ -1281,6 +1426,9 @@ def view_session(
         "active_map": active_map,
         "effects_by_target": effects_by_target,
         "my_lc_ids": my_lc_ids,
+        "casting_mods_by_lc": casting_mods_by_lc,
+        "concentration_by_lc": concentration_by_lc,
+        "monsters": monsters_list,
     })
 
 
@@ -1375,6 +1523,7 @@ def next_turn(
         starting_lc.sneak_attack_used_this_turn = False
         db.add(starting_lc)
         _roll_death_save(db, gs, starting_lc)
+        _aura_check_turn_start(db, gs, starting_lc)
     db.commit()
     events.publish(session_id)
     return RedirectResponse(f"/sessions/{session_id}", status_code=303)
@@ -1402,10 +1551,134 @@ def roll_dice(
     return RedirectResponse(f"/sessions/{session_id}", status_code=303)
 
 
+COVER_AC_BONUS = {"none": 0, "half": 2, "three_quarters": 5, "full": 0}
+
+
+def _is_flanking(db_session: Session, gs: GameSession,
+                 attacker: LiveCharacter, target: LiveCharacter) -> bool:
+    """5e DMG flanking variant: attacker and an ally are on opposite cells of
+    the target on a square grid, both adjacent. Skip for incapacitated/downed
+    allies. Hex grid: opposite-vertex check works the same way.
+    """
+    if not gs.in_combat:
+        return False
+    if attacker.position_x is None or target.position_x is None:
+        return False
+    ax, ay = attacker.position_x, attacker.position_y
+    tx, ty = target.position_x, target.position_y
+    dx, dy = ax - tx, ay - ty
+    if max(abs(dx), abs(dy)) != 1:
+        return False
+    opp_x, opp_y = tx - dx, ty - dy
+    allies = db_session.exec(
+        select(LiveCharacter).where(
+            LiveCharacter.session_id == gs.id,
+            LiveCharacter.is_active == True,
+            LiveCharacter.id != attacker.id,
+            LiveCharacter.is_enemy == attacker.is_enemy,
+        )
+    ).all()
+    for ally in allies:
+        if ally.id == target.id:
+            continue
+        if (ally.current_hp or 0) <= 0:
+            continue
+        if ally.position_x == opp_x and ally.position_y == opp_y:
+            return True
+    return False
+
+
+def _compute_cover_from_geometry(db_session: Session, gs: GameSession,
+                                  attacker: LiveCharacter, target: LiveCharacter) -> str:
+    """Auto-detect cover from map walls + block-walls (Wall of Force/Stone).
+    DMG corner method: from each attacker corner, trace 4 lines to target corners;
+    fewest-blocked count wins (attacker picks best angle).
+        0 blocked → none, 1-2 → half, 3 → three-quarters, 4 from every corner → full.
+    """
+    if not gs.active_map_id:
+        return "none"
+    m = db_session.get(Map, gs.active_map_id)
+    if not m or attacker.position_x is None or target.position_x is None:
+        return "none"
+    grid_type = m.grid_type or "square"
+    walls = list(m.walls or [])
+    for eff in effects_mod.list_area_effects(db_session, gs.id):
+        if not eff.area or eff.area.get("shape") != "wall":
+            continue
+        pts = eff.area.get("points") or []
+        if len(pts) >= 2 and (eff.payload or {}).get("blocks_movement"):
+            walls.append({"x1": pts[0][0], "y1": pts[0][1], "x2": pts[1][0], "y2": pts[1][1]})
+    if not walls:
+        return "none"
+    if grid_type == "hex":
+        af = movement._cell_center_xy(attacker.position_x, attacker.position_y, "hex")
+        tc = movement._cell_center_xy(target.position_x, target.position_y, "hex")
+        for w in walls:
+            try:
+                if movement._segments_cross(af, tc, (w["x1"], w["y1"]), (w["x2"], w["y2"])):
+                    return "three_quarters"
+            except (KeyError, TypeError):
+                continue
+        return "none"
+    ax, ay = attacker.position_x, attacker.position_y
+    tx, ty = target.position_x, target.position_y
+    a_corners = [(ax + dx, ay + dy) for dx in (0, 1) for dy in (0, 1)]
+    t_corners = [(tx + dx, ty + dy) for dx in (0, 1) for dy in (0, 1)]
+    best_blocked = 5
+    for ac in a_corners:
+        blocked = 0
+        for tc in t_corners:
+            for w in walls:
+                try:
+                    if movement._segments_cross(ac, tc, (w["x1"], w["y1"]), (w["x2"], w["y2"])):
+                        blocked += 1
+                        break
+                except (KeyError, TypeError):
+                    continue
+        if blocked < best_blocked:
+            best_blocked = blocked
+    if best_blocked == 0:
+        return "none"
+    if best_blocked <= 2:
+        return "half"
+    if best_blocked <= 3:
+        return "three_quarters"
+    return "full"
+
+
+FUMBLE_TABLE = [
+    "slips and falls prone",
+    "fumbles their weapon — drop it at their feet",
+    "swings wide — narrowly misses an adjacent ally (DM judges)",
+    "loses balance — disadvantage on their next attack roll",
+    "weapon strike sticks — lose next action freeing it",
+    "just a regular miss",
+]
+
+
+def _maybe_roll_fumble(db_session: Session, gs: GameSession, attacker: LiveCharacter) -> None:
+    """When crit_fumble_table is enabled, roll a d6 against the fumble table and log."""
+    c = db_session.get(Campaign, gs.campaign_id)
+    if not rules_mod.get_rule(c, "crit_fumble_table"):
+        return
+    roll = dice.roll("1d6")
+    consequence = FUMBLE_TABLE[(roll.total - 1) % len(FUMBLE_TABLE)]
+    _log(db_session, gs, f"  fumble (d6={roll.total}): {attacker.name} {consequence}")
+
+
 def _do_attack(db_session: Session, gs: GameSession, params: dict, user: User, bypass: set[str]) -> None:
     attacker = _require_live(db_session, gs.id, int(params["attacker_id"]))
     target = _require_live(db_session, gs.id, int(params["target_id"]))
     _push_undo(db_session, gs, f"{attacker.name} attacks {target.name}")
+    cover = (params.get("cover") or "none").lower()
+    # Auto-detect when caller didn't override (cover == "none").
+    if cover == "none":
+        auto = _compute_cover_from_geometry(db_session, gs, attacker, target)
+        if auto != "none":
+            cover = auto
+    if cover == "full":
+        _log(db_session, gs, f"{attacker.name} can't target {target.name} (full cover)")
+        return
     effective_bypass = bypass | _campaign_bypass(db_session, gs)
     flags = _validate_attack(db_session, gs, attacker, target, effective_bypass, distance_ft=int(params.get("distance_ft", 5)))
     # Action economy: first attack of the turn consumes Action and seeds the
@@ -1426,6 +1699,38 @@ def _do_attack(db_session: Session, gs: GameSession, params: dict, user: User, b
     mods = effects_mod.collect_attack_modifiers(db_session, gs.id, attacker.id, target.id)
     if mods.image_log:
         _log(db_session, gs, f"  {mods.image_log}")
+    cover_bonus = COVER_AC_BONUS.get(cover, 0)
+    if cover_bonus:
+        mods.target_ac_bonus = (mods.target_ac_bonus or 0) + cover_bonus
+        _log(db_session, gs, f"  {target.name} has {cover.replace('_', '-')} cover (+{cover_bonus} AC)")
+    c = db_session.get(Campaign, gs.campaign_id)
+    crit_rule = rules_mod.get_rule(c, "crit_rule")
+    # Flanking: melee attacker with an ally on the opposite cell of the target gets advantage.
+    if rules_mod.get_rule(c, "flanking") == "advantage":
+        distance_ft = int(params.get("distance_ft", 5))
+        if distance_ft <= 5 and _is_flanking(db_session, gs, attacker, target):
+            mods.advantage = True
+            _log(db_session, gs, f"  {attacker.name} is flanking {target.name} (advantage)")
+    # Pack Tactics: creature with the feature gets advantage when an ally is adjacent to target.
+    if (rules_mod.get_rule(c, "pack_tactics_auto")
+            and "pack_tactics" in (attacker.class_features or [])):
+        allies = db_session.exec(
+            select(LiveCharacter).where(
+                LiveCharacter.session_id == gs.id,
+                LiveCharacter.is_active == True,
+                LiveCharacter.id != attacker.id,
+                LiveCharacter.is_enemy == attacker.is_enemy,
+            )
+        ).all()
+        for ally in allies:
+            if ally.id == target.id:
+                continue
+            if (ally.current_hp or 0) <= 0 or ally.position_x is None or target.position_x is None:
+                continue
+            if max(abs(ally.position_x - target.position_x), abs(ally.position_y - target.position_y)) == 1:
+                mods.advantage = True
+                _log(db_session, gs, f"  Pack Tactics: {ally.name} is adjacent to {target.name} (advantage)")
+                break
     # Sneak Attack: rogue with advantage (auto-eligible) or manual flag adds Nd6.
     # Once per turn; only fires on hit (extra_damage_on_hit is rolled only on hit).
     sneak_applied = False
@@ -1436,6 +1741,17 @@ def _do_attack(db_session: Session, gs: GameSession, params: dict, user: User, b
         if eligible:
             mods.extra_damage_dice.append((f"{sneak_n}d6", params.get("damage_type", "slashing")))
             sneak_applied = True
+    # Primed smites: collect attacker's smite_on_hit effects; append their damage
+    # to this attack and queue them for consumption if it hits in melee.
+    distance_ft = int(params.get("distance_ft", 5))
+    smite_effects_to_consume: list = []
+    if distance_ft <= (attacker.melee_reach_ft or 5):
+        for eff in effects_mod.list_effects_on(db_session, gs.id, attacker.id):
+            if eff.handler_key == "smite_on_hit":
+                p = eff.payload or {}
+                mods.extra_damage_dice.append((p.get("dice", "1d6"), p.get("type", "radiant")))
+                smite_effects_to_consume.append(eff)
+                _log(db_session, gs, f"  {eff.name} primed: +{p.get('dice','1d6')} {p.get('type','radiant')}")
     result = combat.make_attack(
         attacker.name, target.name,
         int(params.get("to_hit_modifier", 0)) + mods.bonus, target.armor_class,
@@ -1449,7 +1765,10 @@ def _do_attack(db_session: Session, gs: GameSession, params: dict, user: User, b
         extra_damage_on_hit=list(mods.extra_damage_dice),
         target_ac_bonus=mods.target_ac_bonus,
         image_redirect_ac=mods.image_ac if mods.redirect_to_image else None,
+        crit_rule=crit_rule,
     )
+    if result.fumble:
+        _maybe_roll_fumble(db_session, gs, attacker)
     if result.image_hit:
         _consume_mirror_image(db_session, gs, target)
         msg = result.description
@@ -1459,6 +1778,11 @@ def _do_attack(db_session: Session, gs: GameSession, params: dict, user: User, b
         attacker.sneak_attack_used_this_turn = True
         db_session.add(attacker)
         _log(db_session, gs, f"  Sneak Attack +{sneak_n}d6 (used this turn)")
+    if result.hit and not result.image_hit and smite_effects_to_consume:
+        ctx = effects_mod.EffectContext(db=db_session, session_id=gs.id)
+        for eff in smite_effects_to_consume:
+            _log(db_session, gs, f"  {eff.name} consumed")
+            effects_mod.remove_effect(db_session, eff, ctx)
     # Divine Smite: paladin spends a slot on a successful melee hit for extra
     # radiant. 2d8 at slot 1, +1d8 per slot above (cap 5d8). Slot consumed only
     # on hit. Resolved here so the smite damage is included in this attack's
@@ -1523,6 +1847,7 @@ def attack(
     distance_ft: int = Form(5),
     sneak_attack: bool = Form(False),
     smite_slot_level: int = Form(0),
+    cover: str = Form("none"),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ):
@@ -1533,6 +1858,7 @@ def attack(
         "to_hit_modifier": to_hit_modifier, "damage_dice": damage_dice,
         "damage_type": damage_type, "distance_ft": distance_ft,
         "sneak_attack": sneak_attack, "smite_slot_level": smite_slot_level,
+        "cover": cover,
     }, user, bypass=set())
     db.commit()
     events.publish(session_id)
@@ -1591,6 +1917,67 @@ def apply_heal(
     _push_undo(db, gs, f"{target.name} healed {amount}")
     healed = _heal_to(db, gs, target, amount)
     _log(db, gs, f"{target.name} heals {healed} (HP: {target.current_hp}/{target.max_hp})")
+    db.commit()
+    events.publish(session_id)
+    return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+
+
+def _parse_csv_list(s: str) -> list:
+    """Parse a comma-separated string into a clean list of stripped lowercase tokens."""
+    if not s:
+        return []
+    return [tok.strip().lower() for tok in s.split(",") if tok.strip()]
+
+
+@router.post("/sessions/{session_id}/lc/{lc_id}/edit")
+async def edit_live_character(
+    session_id: int,
+    lc_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """DM-only: in-session edits to a LiveCharacter. Affects this session only;
+    library Character is untouched. Pass list fields as comma-separated strings.
+    """
+    gs = _require_session(db, session_id, user, dm_only=True)
+    lc = _require_live(db, session_id, lc_id)
+    form = await request.form()
+    _push_undo(db, gs, f"edit {lc.name}")
+
+    int_fields = (
+        "max_hp", "current_hp", "temp_hp", "armor_class", "speed_ft",
+        "strength", "dexterity", "constitution", "intelligence", "wisdom", "charisma",
+        "melee_reach_ft", "attacks_per_action", "sneak_attack_dice",
+        "darkvision_ft", "vision_normal_ft", "light_emission_ft",
+    )
+    for f in int_fields:
+        v = form.get(f)
+        if v is None or v == "":
+            continue
+        try:
+            setattr(lc, f, int(v))
+        except (TypeError, ValueError):
+            continue
+
+    csv_fields = (
+        "damage_resistances", "damage_immunities", "damage_vulnerabilities",
+        "saving_throw_profs", "class_features",
+    )
+    for f in csv_fields:
+        if f in form:
+            setattr(lc, f, _parse_csv_list(str(form.get(f) or "")))
+
+    name = (form.get("name") or "").strip()
+    if name:
+        lc.name = name
+
+    # Clamp current_hp to max_hp.
+    if (lc.current_hp or 0) > (lc.max_hp or 0):
+        lc.current_hp = lc.max_hp
+
+    db.add(lc)
+    _log(db, gs, f"DM edited {lc.name}")
     db.commit()
     events.publish(session_id)
     return RedirectResponse(f"/sessions/{session_id}", status_code=303)
@@ -1656,6 +2043,7 @@ def cast(
     aoe_dy: int = Form(0),
     wall_x2: Optional[int] = Form(None),
     wall_y2: Optional[int] = Form(None),
+    cover: str = Form("none"),
     spell_save_dc: int = Form(13),
     spell_attack_modifier: int = Form(5),
     spellcasting_modifier: int = Form(3),
@@ -1670,6 +2058,7 @@ def cast(
         "target_ids": target_ids, "aoe_x": aoe_x, "aoe_y": aoe_y,
         "aoe_dx": aoe_dx, "aoe_dy": aoe_dy,
         "wall_x2": wall_x2, "wall_y2": wall_y2,
+        "cover": cover,
         "spell_save_dc": spell_save_dc, "spell_attack_modifier": spell_attack_modifier,
         "spellcasting_modifier": spellcasting_modifier,
         "enforce_slots": enforce_slots,
@@ -1807,6 +2196,12 @@ def _do_cast(db_session: Session, gs: GameSession, params: dict, user: User, byp
         if ability in (lc.saving_throw_profs or []):
             mod += _proficiency_bonus(lc.level or 1)
         sv_mods = effects_mod.collect_save_modifiers(db_session, gs.id, lc.id, ability)
+        # DEX save cover: half/three-quarters cover adds to DEX save vs AoE.
+        # For now, a single cover param applies uniformly across targets; the
+        # cover auto-detection pass refines this per-target where possible.
+        cover_bonus = 0
+        if ability == "dexterity":
+            cover_bonus = COVER_AC_BONUS.get(str(params.get("cover", "none")).lower(), 0)
         return combat.make_save(
             lc.name, ability, mod, save_dc,
             [c["name"] for c in (lc.conditions or [])],
@@ -1814,7 +2209,7 @@ def _do_cast(db_session: Session, gs: GameSession, params: dict, user: User, byp
             subtract_dice=list(sv_mods.subtract_dice),
             extra_advantage=sv_mods.advantage,
             extra_disadvantage=sv_mods.disadvantage,
-            bonus=sv_mods.bonus,
+            bonus=sv_mods.bonus + cover_bonus,
         )
 
     def _hit(lc: LiveCharacter, amount: int, dmg_type: str):
@@ -1990,6 +2385,10 @@ def _apply_spell_effects(db_session: Session, gs: GameSession, spell: dict,
         sxt = dict(blk.get("save_each_turn") or {})
         if sxt and "dc" not in sxt:
             sxt["dc"] = save_dc
+        # For aura_damage handlers, also inject save_dc into payload if missing.
+        blk_payload = dict(blk.get("payload") or {})
+        if blk.get("handler_key") == "aura_damage" and blk_payload.get("save_ability") and "save_dc" not in blk_payload:
+            blk_payload["save_dc"] = save_dc
 
         # Compose the area dict. Walls without baked-in points fill from cast params.
         area_dict = dict(blk.get("area") or {})
@@ -2014,7 +2413,7 @@ def _apply_spell_effects(db_session: Session, gs: GameSession, spell: dict,
                 duration_basis=blk.get("duration_basis", "caster_end_of_turn"),
                 save_each_turn=sxt,
                 area=area_dict,
-                payload=blk.get("payload") or {},
+                payload=blk_payload,
                 started_round=gs.round_number or 0,
                 started_turn_index=gs.current_turn_index or 0,
             )
@@ -2169,6 +2568,73 @@ def spawn_enemy(
     )
     db.add(lc)
     _log(db, gs, f"Enemy spawned: {name} (HP {max_hp}, AC {armor_class})")
+    db.commit()
+    events.publish(session_id)
+    return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+
+
+@router.post("/sessions/{session_id}/spawn-monster")
+def spawn_monster(
+    session_id: int,
+    monster_key: str = Form(),
+    custom_name: str = Form(""),
+    count: int = Form(1),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """DM-only: spawn one or more enemies from the monster catalog. The template's
+    full stat block is copied to each LiveCharacter; resistances/immunities, reach,
+    multi-attack, etc. all carry over.
+    """
+    from game.monsters import get_monster
+    gs = _require_session(db, session_id, user, dm_only=True)
+    monster = get_monster(monster_key)
+    if not monster:
+        raise HTTPException(400, f"unknown monster: {monster_key}")
+    map_obj = db.get(Map, gs.active_map_id) if gs.active_map_id else None
+    cols = map_obj.grid_cols if map_obj else 60
+    base_name = (custom_name or monster.get("name", monster_key)).strip()
+    enemy_count = len(db.exec(select(LiveCharacter).where(
+        LiveCharacter.session_id == session_id, LiveCharacter.is_enemy == True
+    )).all())
+    _push_undo(db, gs, f"spawn {count}x {base_name}")
+    spawned = 0
+    for i in range(max(1, min(count, 12))):
+        suffix = f" {i + 1}" if count > 1 else ""
+        lc_name = f"{base_name}{suffix}"
+        px = max(0, cols - 3 - enemy_count - spawned)
+        lc = LiveCharacter(
+            session_id=session_id,
+            owner_id=user.id,
+            name=lc_name,
+            max_hp=monster["max_hp"],
+            current_hp=monster["max_hp"],
+            armor_class=monster["armor_class"],
+            speed_ft=monster.get("speed_ft", 30),
+            strength=monster.get("strength", 10),
+            dexterity=monster.get("dexterity", 10),
+            constitution=monster.get("constitution", 10),
+            intelligence=monster.get("intelligence", 10),
+            wisdom=monster.get("wisdom", 10),
+            charisma=monster.get("charisma", 10),
+            is_enemy=True,
+            position_x=px,
+            position_y=2,
+            saving_throw_profs=list(monster.get("saving_throw_profs", []) or []),
+            damage_resistances=list(monster.get("damage_resistances", []) or []),
+            damage_immunities=list(monster.get("damage_immunities", []) or []),
+            damage_vulnerabilities=list(monster.get("damage_vulnerabilities", []) or []),
+            class_features=list(monster.get("class_features", []) or []),
+            melee_reach_ft=monster.get("melee_reach_ft", 5),
+            attacks_per_action=monster.get("attacks_per_action", 1),
+            darkvision_ft=monster.get("darkvision_ft", 0),
+        )
+        db.add(lc)
+        spawned += 1
+    cr = monster.get("challenge_rating", "?")
+    _log(db, gs, f"Spawned {spawned}x {base_name} (CR {cr}, HP {monster['max_hp']}, AC {monster['armor_class']})")
+    if monster.get("notes"):
+        _log(db, gs, f"  notes: {monster['notes']}")
     db.commit()
     events.publish(session_id)
     return RedirectResponse(f"/sessions/{session_id}", status_code=303)
@@ -2514,6 +2980,13 @@ def _do_walk(db_session: Session, gs: GameSession, lc: LiveCharacter, path: list
     for step_idx, step in enumerate(result["steps"]):
         prev_xy = (step["from"][0], step["from"][1])
         new_xy = (step["to"][0], step["to"][1])
+
+        # Aura entry trigger (Spirit Guardians etc.): fires when crossing into a radius.
+        _aura_check_step(db_session, gs, lc, prev_xy, new_xy)
+        if lc.is_dead or (lc.current_hp or 0) <= 0:
+            # Aura damage incapacitated the mover; abort the rest of the walk.
+            _commit_partial(step_idx)
+            return {**result, "committed": False, "reason": "incapacitated_in_aura"}
 
         # Opportunity Attack detection: who's losing reach this step?
         oa_eligible = _eligible_oa_reactors(db_session, gs, lc, prev_xy, new_xy)

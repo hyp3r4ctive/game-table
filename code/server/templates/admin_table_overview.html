@@ -20,9 +20,12 @@
      The iframe renders at 1920×1080 and is scale-transformed to fit. */
   .seat-grid {
     display: grid;
-    grid-template-columns: repeat(2, 640px);
+    grid-template-columns: repeat(2, 980px);
     gap: 8px;
     margin-bottom: 8px;
+  }
+  .seat-row {
+    display: flex; gap: 6px;
   }
   .panel-frame {
     position: relative; overflow: hidden;
@@ -33,8 +36,16 @@
     width: 1280px; height: 720px; border: 0;
     transform: scale(0.5); transform-origin: top left;
   }
+  /* Phone controller mirrors a 360×720 phone screen at 1/1 scale or scaled to fit beside the seat. */
+  .panel-frame.controller {
+    width: 334px; height: 360px;
+  }
+  .panel-frame.controller iframe {
+    width: 360px; height: 720px; border: 0;
+    transform: scale(0.5); transform-origin: top left;
+  }
   .panel-frame.projector {
-    width: calc(640px * 2 + 8px);
+    width: calc(980px * 2 + 8px);
     aspect-ratio: 60/48;
   }
   .panel-frame.projector iframe { width: 100%; height: 100%; border: 0; }
@@ -72,15 +83,25 @@
   <div id="panel-views" class="tab-panel active">
     <div class="seat-grid">
       {% for seat in [1,2,3,4,5,6] %}
-      <div class="panel-frame seat">
-        <div class="label">
-          <span>Seat {{ seat }}</span>
-          <span class="views">
-            <a data-view="sheet" class="active" onclick="setView({{ seat }}, 'sheet', this)">sheet</a>
-            <a data-view="map" onclick="setView({{ seat }}, 'map', this)">map</a>
-          </span>
+      <div class="seat-row">
+        <div class="panel-frame seat">
+          <div class="label">
+            <span>Seat {{ seat }}</span>
+            <span class="views">
+              <a data-view="sheet" class="active" onclick="setView({{ seat }}, 'sheet', this)">sheet</a>
+              <a data-view="map" onclick="setView({{ seat }}, 'map', this)">map</a>
+            </span>
+          </div>
+          <iframe id="seat-{{ seat }}" src="/table/seat/{{ seat }}?view=sheet"></iframe>
         </div>
-        <iframe id="seat-{{ seat }}" src="/table/seat/{{ seat }}?view=sheet"></iframe>
+        <div class="panel-frame controller">
+          <div class="label"><span>Phone {{ seat }}</span></div>
+          {% if active_session %}
+            <iframe src="/sessions/{{ active_session.id }}/play?seat={{ seat }}"></iframe>
+          {% else %}
+            <div class="empty-msg">no session</div>
+          {% endif %}
+        </div>
       </div>
       {% endfor %}
     </div>

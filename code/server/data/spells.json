@@ -1625,33 +1625,27 @@
     ],
     "duration": "10 minutes",
     "concentration": true,
-    "effect_type": "manual",
-    "area": {
-      "shape": "sphere",
-      "radius_ft": 15
-    },
-    "damage": [
-      {
-        "dice": "3d8",
-        "type": "radiant",
-        "scaling": {
-          "per_slot_above": 3,
-          "extra_dice": "1d8"
-        }
-      }
-    ],
+    "effect_type": "buff",
+    "max_targets": 1,
     "applies_effects": [
       {
-        "handler_key": "",
+        "handler_key": "aura_damage",
         "name": "Spirit Guardians (aura)",
-        "description": "15-ft radius around caster. Half speed in area; WIS save or 3d8 radiant on entering or starting turn there.",
+        "description": "15-ft radius around caster. Hostile creatures entering or starting turn there: WIS save DC = caster's spell save DC, 3d8 radiant on fail, half on success.",
         "target_scope": "self",
         "duration_rounds": 100,
         "duration_basis": "caster_end_of_turn",
-        "is_concentration": true
+        "is_concentration": true,
+        "payload": {
+          "radius_ft": 15,
+          "dice": "3d8",
+          "type": "radiant",
+          "save_ability": "wisdom",
+          "hostile_only": true
+        }
       }
     ],
-    "description": "Spirits flit around you in a 15-ft radius for the duration. Difficult terrain for enemies. WIS save or 3d8 radiant (necrotic if evil-aligned caster) when entering or starting turn there. Half on success.",
+    "description": "Spirits flit around you in a 15-ft radius for the duration. Hostile creatures entering or starting their turn there make a Wisdom save: 3d8 radiant on fail, half on success. (Caster can switch to necrotic if evil-aligned \u2014 DM tracks.)",
     "requires_sight": false,
     "target_type": "self"
   },
@@ -1886,16 +1880,23 @@
     "max_targets": 1,
     "applies_effects": [
       {
-        "handler_key": "",
+        "handler_key": "damage_resistance",
         "name": "Stoneskin",
         "description": "Resistance to nonmagical bludgeoning, piercing, slashing.",
         "target_scope": "each_target",
         "duration_rounds": 600,
         "duration_basis": "caster_end_of_turn",
-        "is_concentration": true
+        "is_concentration": true,
+        "payload": {
+          "types": [
+            "bludgeoning",
+            "piercing",
+            "slashing"
+          ]
+        }
       }
     ],
-    "description": "Until the spell ends, target gains resistance to nonmagical bludgeoning, piercing, and slashing damage. Resistance is freeform \u2014 apply manually.",
+    "description": "Target gains resistance to nonmagical bludgeoning, piercing, and slashing damage for the duration.",
     "requires_sight": false,
     "target_type": "touch"
   },
@@ -1985,19 +1986,27 @@
       "shape": "cube",
       "size_ft": 30
     },
-    "save": {
-      "ability": "CON",
-      "on_success": "no_effect"
-    },
-    "damage": [
+    "applies_effects": [
       {
-        "dice": "4d10",
-        "type": "radiant"
+        "handler_key": "aura_damage",
+        "name": "Sickening Radiance",
+        "description": "Sickly green radiance in a 30-ft cube. Each creature entering or starting turn there: CON save, 4d10 radiant on fail.",
+        "target_scope": "self",
+        "duration_rounds": 100,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "payload": {
+          "radius_ft": 15,
+          "dice": "4d10",
+          "type": "radiant",
+          "save_ability": "constitution",
+          "hostile_only": false
+        }
       }
     ],
-    "description": "Sickly green radiance in a 30-ft cube. Each creature entering or starting turn there makes a CON save or takes 4d10 radiant damage and gains a level of exhaustion. Glows visibly.",
+    "description": "30-ft cube of greenish radiance. Each creature entering or starting turn there makes a CON save or takes 4d10 radiant + a level of exhaustion. The area is heavily obscured. (Spell uses cube area; aura handler approximates with radius around caster's position.)",
     "requires_sight": true,
-    "target_type": "point_seen"
+    "target_type": "self"
   },
   "cone_of_cold": {
     "name": "Cone of Cold",
@@ -2299,7 +2308,7 @@
       {
         "handler_key": "wall_damage",
         "name": "Blade Barrier",
-        "description": "6d10 slashing on entry. Three-quarters cover for creatures behind it.",
+        "description": "6d10 slashing on entry; DEX save halves.",
         "target_scope": "area",
         "duration_rounds": 100,
         "duration_basis": "caster_end_of_turn",
@@ -2309,7 +2318,11 @@
         },
         "payload": {
           "dice": "6d10",
-          "type": "slashing"
+          "type": "slashing",
+          "save": {
+            "ability": "dex",
+            "dc": 14
+          }
         }
       }
     ],
@@ -2392,5 +2405,233 @@
     "description": "A nonmagical wall of solid stone springs into existence. Stays after concentration ends if you concentrate the full 10 minutes. Can be Damaged like any object.",
     "requires_sight": true,
     "target_type": "wall"
+  },
+  "searing_smite": {
+    "name": "Searing Smite",
+    "level": 1,
+    "school": "evocation",
+    "casting_time": "bonus_action",
+    "range_ft": 0,
+    "components": [
+      "V"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "smite_on_hit",
+        "name": "Searing Smite (primed)",
+        "description": "Next melee weapon hit deals +1d6 fire.",
+        "target_scope": "self",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "payload": {
+          "dice": "1d6",
+          "type": "fire"
+        }
+      }
+    ],
+    "description": "Next time you hit with a melee weapon attack during the spell's duration, the target takes an extra 1d6 fire damage and ignites (target makes CON save at end of each turn or takes another 1d6 fire). +1d6 per slot above 1st.",
+    "requires_sight": false,
+    "target_type": "self"
+  },
+  "wrathful_smite": {
+    "name": "Wrathful Smite",
+    "level": 1,
+    "school": "evocation",
+    "casting_time": "bonus_action",
+    "range_ft": 0,
+    "components": [
+      "V"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "smite_on_hit",
+        "name": "Wrathful Smite (primed)",
+        "description": "Next melee weapon hit deals +1d6 psychic; target makes WIS save or be frightened (resolved by DM).",
+        "target_scope": "self",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "payload": {
+          "dice": "1d6",
+          "type": "psychic"
+        }
+      }
+    ],
+    "description": "Next melee weapon hit deals +1d6 psychic. Target must make WIS save or be frightened of you for the duration.",
+    "requires_sight": false,
+    "target_type": "self"
+  },
+  "thunderous_smite": {
+    "name": "Thunderous Smite",
+    "level": 1,
+    "school": "evocation",
+    "casting_time": "bonus_action",
+    "range_ft": 0,
+    "components": [
+      "V"
+    ],
+    "duration": "1 round",
+    "concentration": true,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "smite_on_hit",
+        "name": "Thunderous Smite (primed)",
+        "description": "Next melee weapon hit deals +2d6 thunder; target makes STR save or pushed 10 ft + prone.",
+        "target_scope": "self",
+        "duration_rounds": 1,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "payload": {
+          "dice": "2d6",
+          "type": "thunder"
+        }
+      }
+    ],
+    "description": "Next melee weapon hit thunders out for an extra 2d6 thunder. Target makes STR save or be pushed 10 ft and knocked prone.",
+    "requires_sight": false,
+    "target_type": "self"
+  },
+  "branding_smite": {
+    "name": "Branding Smite",
+    "level": 2,
+    "school": "evocation",
+    "casting_time": "bonus_action",
+    "range_ft": 0,
+    "components": [
+      "V"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "smite_on_hit",
+        "name": "Branding Smite (primed)",
+        "description": "Next melee weapon hit deals +2d6 radiant; target sheds dim light, can't be invisible.",
+        "target_scope": "self",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "payload": {
+          "dice": "2d6",
+          "type": "radiant"
+        }
+      }
+    ],
+    "description": "Next melee weapon hit deals +2d6 radiant. Target glows visibly; can't benefit from invisibility while branded. +1d6 per slot above 2nd.",
+    "requires_sight": false,
+    "target_type": "self"
+  },
+  "banishing_smite": {
+    "name": "Banishing Smite",
+    "level": 5,
+    "school": "abjuration",
+    "casting_time": "bonus_action",
+    "range_ft": 0,
+    "components": [
+      "V"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "smite_on_hit",
+        "name": "Banishing Smite (primed)",
+        "description": "Next melee weapon hit deals +5d10 force; if target \u226450 HP, banished (DM resolves).",
+        "target_scope": "self",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "payload": {
+          "dice": "5d10",
+          "type": "force"
+        }
+      }
+    ],
+    "description": "Next melee weapon hit deals +5d10 force. If target is reduced to \u226450 HP after the hit, it's banished to a harmless demiplane until the spell ends.",
+    "requires_sight": false,
+    "target_type": "self"
+  },
+  "death_ward": {
+    "name": "Death Ward",
+    "level": 4,
+    "school": "abjuration",
+    "casting_time": "action",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "8 hours",
+    "concentration": false,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "death_ward",
+        "name": "Death Ward",
+        "description": "First fatal hit reduces caster to 1 HP instead of 0; effect consumed.",
+        "target_scope": "each_target",
+        "duration_rounds": 4800,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": false
+      }
+    ],
+    "description": "Target is warded against death. The first time the target would drop to 0 HP, it drops to 1 HP instead and the spell ends.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "cloud_of_daggers": {
+    "name": "Cloud of Daggers",
+    "level": 2,
+    "school": "conjuration",
+    "casting_time": "action",
+    "range_ft": 60,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "manual",
+    "area": {
+      "shape": "cube",
+      "size_ft": 5
+    },
+    "applies_effects": [
+      {
+        "handler_key": "aura_damage",
+        "name": "Cloud of Daggers",
+        "description": "5-ft cube of spinning daggers. Any creature entering or starting turn there takes 4d4 slashing (no save). +2d4 per slot above 2nd.",
+        "target_scope": "self",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "payload": {
+          "radius_ft": 5,
+          "dice": "4d4",
+          "type": "slashing",
+          "hostile_only": false
+        }
+      }
+    ],
+    "description": "Fill a 5-ft cube with spinning daggers. Any creature in the area when cast or that enters takes 4d4 slashing. +2d4 per slot above 2nd. Note: aura handler tracks caster position; place the caster at the cube center.",
+    "requires_sight": true,
+    "target_type": "self"
   }
 }

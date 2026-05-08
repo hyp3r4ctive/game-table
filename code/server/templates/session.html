@@ -313,9 +313,58 @@
           {% endfor %}
         </div>
         {% endif %}
+        {% set conc_name = concentration_by_lc.get(lc.id) %}
+        {% if conc_name %}
+        <div class="row" style="margin-top:4px">
+          <span class="pill teal" title="Concentration: ends if caster fails CON save on damage, casts another concentration spell, or is incapacitated.">⚡ concentrating on {{ conc_name }}</span>
+        </div>
+        {% endif %}
       {% endif %}
 
+      {% set can_act_on_lc = is_dm or (lc.owner_id == user.id and not lc.is_enemy) %}
       {% if is_dm %}
+      <details>
+        <summary>edit</summary>
+        <form method="post" action="/sessions/{{ gs.id }}/lc/{{ lc.id }}/edit" class="inline-form" style="flex-direction:column; align-items:flex-start; gap:8px">
+          <div class="row" style="gap:6px; flex-wrap:wrap">
+            <label>name <input type="text" name="name" value="{{ lc.name }}" style="width:130px; margin:0"></label>
+            <label>HP <input type="number" name="current_hp" value="{{ lc.current_hp }}" style="width:60px; margin:0"></label>
+            <label>/ <input type="number" name="max_hp" value="{{ lc.max_hp }}" style="width:60px; margin:0"></label>
+            <label>temp <input type="number" name="temp_hp" value="{{ lc.temp_hp or 0 }}" style="width:50px; margin:0"></label>
+            <label>AC <input type="number" name="armor_class" value="{{ lc.armor_class }}" style="width:50px; margin:0"></label>
+            <label>spd <input type="number" name="speed_ft" value="{{ lc.speed_ft }}" style="width:55px; margin:0"></label>
+          </div>
+          <div class="row" style="gap:6px; flex-wrap:wrap">
+            <label>STR <input type="number" name="strength" value="{{ lc.strength }}" style="width:50px; margin:0"></label>
+            <label>DEX <input type="number" name="dexterity" value="{{ lc.dexterity }}" style="width:50px; margin:0"></label>
+            <label>CON <input type="number" name="constitution" value="{{ lc.constitution }}" style="width:50px; margin:0"></label>
+            <label>INT <input type="number" name="intelligence" value="{{ lc.intelligence }}" style="width:50px; margin:0"></label>
+            <label>WIS <input type="number" name="wisdom" value="{{ lc.wisdom }}" style="width:50px; margin:0"></label>
+            <label>CHA <input type="number" name="charisma" value="{{ lc.charisma }}" style="width:50px; margin:0"></label>
+          </div>
+          <div class="row" style="gap:6px; flex-wrap:wrap">
+            <label>reach (ft) <input type="number" name="melee_reach_ft" value="{{ lc.melee_reach_ft or 5 }}" style="width:55px; margin:0"></label>
+            <label>attacks/action <input type="number" name="attacks_per_action" value="{{ lc.attacks_per_action or 1 }}" style="width:55px; margin:0"></label>
+            <label>sneak d6 <input type="number" name="sneak_attack_dice" value="{{ lc.sneak_attack_dice or 0 }}" style="width:55px; margin:0"></label>
+            <label>darkvision <input type="number" name="darkvision_ft" value="{{ lc.darkvision_ft or 0 }}" style="width:55px; margin:0"></label>
+            <label>vision <input type="number" name="vision_normal_ft" value="{{ lc.vision_normal_ft or 0 }}" style="width:55px; margin:0"></label>
+            <label>light <input type="number" name="light_emission_ft" value="{{ lc.light_emission_ft or 0 }}" style="width:55px; margin:0"></label>
+          </div>
+          <div class="row" style="gap:6px; flex-wrap:wrap">
+            <label style="flex:1; min-width:240px">resist <input type="text" name="damage_resistances" value="{{ lc.damage_resistances|join(',') if lc.damage_resistances else '' }}" placeholder="fire, cold, ..." style="width:100%; margin:0"></label>
+            <label style="flex:1; min-width:240px">immune <input type="text" name="damage_immunities" value="{{ lc.damage_immunities|join(',') if lc.damage_immunities else '' }}" placeholder="poison, ..." style="width:100%; margin:0"></label>
+          </div>
+          <div class="row" style="gap:6px; flex-wrap:wrap">
+            <label style="flex:1; min-width:240px">vulnerable <input type="text" name="damage_vulnerabilities" value="{{ lc.damage_vulnerabilities|join(',') if lc.damage_vulnerabilities else '' }}" placeholder="radiant, ..." style="width:100%; margin:0"></label>
+            <label style="flex:1; min-width:240px">save profs <input type="text" name="saving_throw_profs" value="{{ lc.saving_throw_profs|join(',') if lc.saving_throw_profs else '' }}" placeholder="strength, constitution, ..." style="width:100%; margin:0"></label>
+          </div>
+          <div class="row" style="gap:6px; flex-wrap:wrap">
+            <label style="flex:1; min-width:300px">class features <input type="text" name="class_features" value="{{ lc.class_features|join(',') if lc.class_features else '' }}" placeholder="divine_smite, extra_attack, ..." style="width:100%; margin:0"></label>
+          </div>
+          <button type="submit" class="small">save</button>
+        </form>
+      </details>
+
       <details>
         <summary>actions</summary>
 
@@ -391,29 +440,45 @@
             smite slot <input type="number" name="smite_slot_level" min="0" max="5" value="0" style="width:50px; margin:0">
           </label>
           {% endif %}
+          <label class="meta" style="font-size:0.82em">cover
+            <select name="cover" style="margin:0">
+              <option value="none">none</option>
+              <option value="half">half (+2 AC)</option>
+              <option value="three_quarters">3/4 (+5 AC)</option>
+              <option value="full">full (no shot)</option>
+            </select>
+          </label>
           <button type="submit" class="small">attack</button>
         </form>
 
         {% if not lc.is_enemy %}
-        <form method="post" action="/sessions/{{ gs.id }}/cast" class="inline-form cast-form" data-caster-id="{{ lc.id }}">
+        <form method="post" action="/sessions/{{ gs.id }}/cast" class="inline-form cast-form" data-caster-id="{{ lc.id }}" onsubmit="return prepareCastSubmit(this)">
           <input type="hidden" name="caster_id" value="{{ lc.id }}">
           <input type="hidden" name="aoe_x" value="">
           <input type="hidden" name="aoe_y" value="">
           <input type="hidden" name="wall_x2" value="">
           <input type="hidden" name="wall_y2" value="">
+          <input type="hidden" name="target_ids" value="">
           <label>cast</label>
-          <select name="spell_name" class="spell-select">
-            {% for s in spells %}<option value="{{ s.key }}" data-area='{{ s.area|tojson if s.area else "null" }}' data-range="{{ s.range_ft }}" data-target-type="{{ s.target_type }}">L{{ s.level }} {{ s.name }}{% if s.area %} ({{ s.area.shape }}){% endif %}</option>{% endfor %}
+          <select name="spell_name" class="spell-select" onchange="onSpellChange(this)">
+            {% for lvl in range(0, 10) %}{% set lvl_spells = spells | selectattr('level', 'equalto', lvl) | list %}{% if lvl_spells %}<optgroup label="{% if lvl == 0 %}cantrip{% else %}level {{ lvl }}{% endif %}">{% for s in lvl_spells %}<option value="{{ s.key }}" data-area='{{ s.area|tojson if s.area else "null" }}' data-range="{{ s.range_ft }}" data-target-type="{{ s.target_type }}" data-level="{{ s.level }}" data-components="{{ (s.components | join('') if s.components else '') }}" data-material="{{ s.material_component or '' }}" data-casting-time="{{ s.casting_time or 'action' }}">{{ s.name }}{% if s.area %} ({{ s.area.shape }}){% endif %}</option>{% endfor %}</optgroup>{% endif %}{% endfor %}
           </select>
-          <label>slot</label><input type="number" name="slot_level" value="1" style="width:50px">
-          <label>target</label>
-          <select name="target_ids">
-            <option value="">—</option>
-            {% for t in live_characters %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+          <span class="meta cast-spell-info" style="font-size:0.78em"></span>
+          <label class="cast-slot-label">slot</label><input type="number" name="slot_level" value="1" min="1" max="9" class="cast-slot-input" style="width:50px">
+          <label>targets</label>
+          <select class="cast-targets" multiple size="3" style="min-width:140px">
+            <optgroup label="self">
+              <option value="{{ lc.id }}">{{ lc.name }} (self)</option>
+            </optgroup>
+            {% set allies = live_characters | selectattr('is_enemy', 'false') | rejectattr('id', 'equalto', lc.id) | list %}
+            {% if allies %}<optgroup label="allies">{% for t in allies %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</optgroup>{% endif %}
+            {% set enemies = live_characters | selectattr('is_enemy', 'true') | list %}
+            {% if enemies %}<optgroup label="enemies">{% for t in enemies %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</optgroup>{% endif %}
           </select>
-          <label>DC</label><input type="number" name="spell_save_dc" value="13" style="width:50px">
-          <label>+atk</label><input type="number" name="spell_attack_modifier" value="5" style="width:50px">
-          <label>+mod</label><input type="number" name="spellcasting_modifier" value="3" style="width:50px">
+          {% set cm = casting_mods_by_lc.get(lc.id, {'dc': 13, 'atk_mod': 5, 'scm': 3}) %}
+          <label>DC</label><input type="number" name="spell_save_dc" value="{{ cm.dc }}" style="width:50px">
+          <label>+atk</label><input type="number" name="spell_attack_modifier" value="{{ cm.atk_mod }}" style="width:50px">
+          <label>+mod</label><input type="number" name="spellcasting_modifier" value="{{ cm.scm }}" style="width:50px">
           <button type="submit" class="small">cast</button>
         </form>
         <div class="meta">slots: {% for k, v in lc.spell_slots.items() %}L{{k}}:{{v}} {% endfor %}</div>
@@ -631,12 +696,24 @@
 
 <div class="panel">
   <h3>Spawn enemy</h3>
+  {% if monsters %}
+  <form method="post" action="/sessions/{{ gs.id }}/spawn-monster" class="inline-form" style="margin-bottom:8px">
+    <label>monster</label>
+    <select name="monster_key" style="min-width:180px">
+      {% for m in monsters %}<option value="{{ m.key }}">{{ m.name }} (CR {{ m.challenge_rating }}, HP {{ m.max_hp }}, AC {{ m.armor_class }})</option>{% endfor %}
+    </select>
+    <label>name (optional)</label><input type="text" name="custom_name" placeholder="leave blank for default" style="width:140px">
+    <label>x</label><input type="number" name="count" value="1" min="1" max="12" style="width:55px">
+    <button type="submit" class="small">spawn from catalog</button>
+  </form>
+  {% endif %}
   <form method="post" action="/sessions/{{ gs.id }}/spawn-enemy" class="inline-form">
-    <input type="text" name="name" placeholder="goblin" required style="width:120px">
+    <span class="meta">custom:</span>
+    <input type="text" name="name" placeholder="custom enemy" required style="width:120px">
     <label>HP</label><input type="number" name="max_hp" value="10">
     <label>AC</label><input type="number" name="armor_class" value="13">
     <label>DEX</label><input type="number" name="dexterity" value="14">
-    <button type="submit">spawn</button>
+    <button type="submit" class="small">spawn</button>
   </form>
 </div>
 
@@ -1413,14 +1490,49 @@
     updateInteractMode();
   }
 
+  // Serialize the multi-select targets into the hidden target_ids CSV the server expects.
+  // Hide/disable the slot input when a cantrip (level 0) is selected.
+  window.prepareCastSubmit = function(form) {
+    const targetsSel = form.querySelector('.cast-targets');
+    const csv = targetsSel ? Array.from(targetsSel.selectedOptions).map(o => o.value).join(',') : '';
+    const hidden = form.querySelector('input[name="target_ids"]');
+    if (hidden) hidden.value = csv;
+    return true;
+  };
+  window.onSpellChange = function(sel) {
+    const opt = sel.selectedOptions[0];
+    if (!opt) return;
+    const isCantrip = (opt.dataset.level === '0');
+    const form = sel.closest('form');
+    const slotLabel = form.querySelector('.cast-slot-label');
+    const slotInput = form.querySelector('.cast-slot-input');
+    if (slotLabel) slotLabel.style.display = isCantrip ? 'none' : '';
+    if (slotInput) {
+      slotInput.style.display = isCantrip ? 'none' : '';
+      if (isCantrip) slotInput.value = '0';
+      else if (slotInput.value === '0') slotInput.value = opt.dataset.level || '1';
+    }
+    // Component / casting-time info next to the spell select.
+    const info = form.querySelector('.cast-spell-info');
+    if (info) {
+      const comps = opt.dataset.components || '';
+      const mat = opt.dataset.material || '';
+      const ct = opt.dataset.castingTime || 'action';
+      const range = opt.dataset.range || '0';
+      const ctLabel = ct === 'bonus_action' ? 'BA' : (ct === 'reaction' ? 'rxn' : (ct === 'action' ? 'act' : ct));
+      const compStr = comps ? comps.split('').join(' ') : '';
+      info.textContent = `${ctLabel} · range ${range}ft · ${compStr}` + (mat ? ` (${mat})` : '');
+    }
+  };
   document.querySelectorAll('.cast-form').forEach(form => {
+    const sel = form.querySelector('.spell-select');
+    if (sel) onSpellChange(sel);
     form.addEventListener('submit', e => {
-      const sel = form.querySelector('.spell-select');
       if (!sel) return;
       const opt = sel.selectedOptions[0];
       const areaRaw = opt.dataset.area;
       const area = (!areaRaw || areaRaw === 'null') ? null : JSON.parse(areaRaw);
-      if (!area) return;  // single-target: normal submit
+      if (!area) return;  // single-target: normal submit (target_ids already serialized)
       const targetType = opt.dataset.targetType || '';
       const omni = (area.shape === 'sphere' || area.shape === 'cube' || area.shape === 'circle');
       // Self-centered omni AoE: caster is origin, no click needed — just submit.

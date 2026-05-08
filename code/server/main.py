@@ -181,11 +181,16 @@ async def play_view(
     user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ):
-    """Phone controller for a player. Auth-required; resolves the user's PC in this session."""
-    from db import LiveCharacter, Map, ActiveEffect
+    """Phone controller for a player. Auth-required; resolves the user's PC in
+    this session. Campaign DM may also view any LC via ?lc_id= or ?seat= so the
+    admin overview can embed each seat's controller for testing.
+    """
+    from db import LiveCharacter, Map, ActiveEffect, Campaign
     gs = db.get(GameSession, session_id)
     if not gs or not gs.is_active:
         raise HTTPException(404, "session not found")
+    campaign = db.get(Campaign, gs.campaign_id) if gs.campaign_id else None
+    is_dm = bool(campaign and campaign.dm_id == user.id)
     my_lcs = db.exec(
         select(LiveCharacter).where(
             LiveCharacter.session_id == session_id,
@@ -193,17 +198,32 @@ async def play_view(
             LiveCharacter.is_enemy == False,
         )
     ).all()
-    if not my_lcs:
-        return templates.TemplateResponse(request, "phone_controller.html", {
-            "user": user, "gs": gs, "lc": None, "active_map": None,
-            "live_characters": [], "spells": [], "active_effects": [],
-        })
-    requested_id = request.query_params.get("character_id")
+    requested_lc_id = request.query_params.get("lc_id") or request.query_params.get("character_id")
+    seat_param = request.query_params.get("seat")
     lc = None
-    if requested_id:
-        lc = next((l for l in my_lcs if str(l.id) == requested_id), None)
+    # DM-only path: look up by lc_id (any LC) or seat (assigned LC).
+    if is_dm:
+        if requested_lc_id:
+            cand = db.get(LiveCharacter, int(requested_lc_id))
+            if cand and cand.session_id == session_id:
+                lc = cand
+        elif seat_param:
+            assigned = (gs.seat_assignments or {}).get(str(seat_param))
+            if assigned:
+                cand = db.get(LiveCharacter, int(assigned))
+                if cand and cand.session_id == session_id:
+                    lc = cand
+    # Fall through to player path if the DM lookups didn't resolve.
     if lc is None:
-        lc = my_lcs[0]
+        if not my_lcs:
+            return templates.TemplateResponse(request, "phone_controller.html", {
+                "user": user, "gs": gs, "lc": None, "active_map": None,
+                "live_characters": [], "spells": [], "active_effects": [],
+            })
+        if requested_lc_id:
+            lc = next((l for l in my_lcs if str(l.id) == requested_lc_id), None)
+        if lc is None:
+            lc = my_lcs[0]
     active_map = db.get(Map, gs.active_map_id) if gs.active_map_id else None
     live_characters = db.exec(
         select(LiveCharacter).where(LiveCharacter.session_id == session_id)
@@ -454,6 +474,13 @@ def _character_from_form(form_data: dict, owner_id: int, existing: Character | N
     char.saving_throw_profs = _list("saving_throw_profs")
     char.skill_profs = _list("skill_profs")
     char.skill_expertises = _list("skill_expertises")
+    char.melee_reach_ft = _int("melee_reach_ft", 5)
+    char.attacks_per_action = max(1, _int("attacks_per_action", 1))
+    char.sneak_attack_dice = _int("sneak_attack_dice", 0)
+    char.damage_resistances = [s.strip().lower() for s in _get("damage_resistances_csv").split(",") if s.strip()]
+    char.damage_immunities = [s.strip().lower() for s in _get("damage_immunities_csv").split(",") if s.strip()]
+    char.damage_vulnerabilities = [s.strip().lower() for s in _get("damage_vulnerabilities_csv").split(",") if s.strip()]
+    char.class_features = [s.strip().lower() for s in _get("class_features_csv").split(",") if s.strip()]
     char.languages = [s.strip() for s in _get("languages_csv").split(",") if s.strip()]
     char.features = [{"name": ln.split(":", 1)[0].strip(), "description": ln.split(":", 1)[1].strip() if ":" in ln else ""} for ln in _split_lines("features_text")]
     char.equipment = [{"name": ln} for ln in _split_lines("equipment_text")]
