@@ -1,0 +1,711 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  /* Full-bleed phone: kill base.html's body padding/max-width and global nav. */
+  body { padding: 0 !important; max-width: none !important; margin: 0 !important; background: #0a0d10; color: #e6e9ec; }
+  body > nav { display: none !important; }
+  .ph { padding: 6px 8px; max-width: none; margin: 0; width: 100%; }
+  .ph h1 { margin: 0; font-size: 1.05em; }
+  .ph .panel { padding: 8px 10px; margin-bottom: 6px; }
+  .turn-banner { padding: 8px 10px; border-radius: 6px; margin-bottom: 6px; font-weight: 600; text-align: center; }
+  .turn-banner.mine { background: linear-gradient(90deg, #d4a017, #b8770f); color: #1a1a1a; }
+  .turn-banner.theirs { background: var(--bg-elevated); color: var(--text-faint); }
+  .turn-banner.peace { background: var(--bg-elevated); color: var(--text-faint); }
+  .stat-row { display: flex; justify-content: space-between; align-items: center; gap: 6px; }
+  .stat-pill { background: var(--bg-elevated); border-radius: 4px; padding: 3px 8px; font-size: 0.85em; }
+  .hp-bar { background: #0f1316; height: 10px; border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
+  .hp-fill { background: #2a9d8f; height: 100%; }
+  .hp-fill.low { background: #c45a5a; }
+  .actions { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 6px; }
+  .actions button {
+    min-height: 56px; font-size: 0.9em; font-weight: 600;
+    background: var(--bg-elevated); color: var(--text);
+    border: 1px solid var(--border); border-radius: 6px; padding: 4px;
+  }
+  .actions button.used { opacity: 0.4; }
+  .actions button.primary { background: #2a9d8f; color: #fff; border-color: #2a9d8f; }
+  .actions button.danger { background: #6a3a3a; color: #fff; }
+  .move-section { }
+  .move-section .mode-toggle { display: flex; gap: 0; margin-bottom: 6px; }
+  .move-section .mode-toggle button { flex: 1; padding: 8px; background: var(--bg-elevated); color: var(--text-faint); border: 1px solid var(--border); }
+  .move-section .mode-toggle button.active { background: var(--teal); color: #1a1a1a; }
+  .move-section .mode-toggle button:first-child { border-radius: 6px 0 0 6px; }
+  .move-section .mode-toggle button:last-child { border-radius: 0 6px 6px 0; }
+
+  /* Square 8-dir d-pad */
+  .dpad-square { display: grid; grid-template-columns: repeat(3, 70px); grid-template-rows: repeat(3, 70px); gap: 6px; justify-content: center; }
+  .dpad-square button { width: 70px; height: 70px; font-size: 1.4em; font-weight: 700; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text); border-radius: 8px; }
+  .dpad-square .center { background: transparent; border: 1px dashed var(--border); }
+
+  /* Hex 6-dir d-pad: rows of 2/2/2 with horizontal offset to suggest hex layout */
+  .dpad-hex { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+  .dpad-hex .row { display: flex; gap: 6px; }
+  .dpad-hex button { width: 70px; height: 70px; font-size: 1.05em; font-weight: 700; background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text); border-radius: 8px; }
+
+  .move-readout { text-align: center; margin-top: 6px; font-size: 0.95em; }
+  .picker { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 6px; padding: 6px; max-height: 180px; overflow-y: auto; }
+  .picker .row { display: flex; justify-content: space-between; align-items: center; padding: 6px 4px; border-bottom: 1px solid #14181b; cursor: pointer; }
+  .picker .row:last-child { border-bottom: none; }
+  .picker .row.selected { background: rgba(42, 157, 143, 0.25); }
+  .picker .row.enemy { color: #f0c0c0; }
+  .effect-row { padding: 4px 6px; background: rgba(255,255,255,0.04); border-radius: 4px; margin-bottom: 4px; font-size: 0.88em; }
+  .effect-row .meta { color: var(--text-faint); }
+  .switcher { font-size: 0.8em; color: var(--text-faint); margin-bottom: 4px; }
+</style>
+
+{% if not lc %}
+<div class="ph">
+  <div class="panel">
+    <h1>{{ user.username }}</h1>
+    <p class="meta">You don't have a character in this session yet.</p>
+  </div>
+</div>
+{% else %}
+
+{% set str_mod = ((lc.strength - 10) // 2) %}
+{% set dex_mod = ((lc.dexterity - 10) // 2) %}
+{% set con_mod = ((lc.constitution - 10) // 2) %}
+{% set hp_pct = (lc.current_hp / lc.max_hp * 100) if lc.max_hp else 0 %}
+{% set is_my_turn = lc.name == (gs.initiative_order[gs.current_turn_index].name if (gs.in_combat and gs.initiative_order) else None) %}
+{% set grid_type = active_map.grid_type if active_map else 'square' %}
+
+<div class="ph" data-session-id="{{ gs.id }}" data-actor-id="{{ lc.id }}" data-grid-type="{{ grid_type }}">
+
+  {% if my_lcs and my_lcs|length > 1 %}
+    <div class="switcher">
+      Controlling: <strong>{{ lc.name }}</strong> ·
+      {% for other in my_lcs %}{% if other.id != lc.id %}<a href="?character_id={{ other.id }}">switch to {{ other.name }}</a>{% endif %}{% endfor %}
+    </div>
+  {% endif %}
+
+  <div id="turn-banner" class="turn-banner peace">—</div>
+
+  <div class="panel">
+    <div class="stat-row">
+      <h1>{{ lc.name }}</h1>
+      <div>
+        <span class="stat-pill" id="ac-pill">AC {{ lc.armor_class }}</span>
+        <span class="stat-pill" id="spd-pill">SPD {{ lc.speed_ft }}</span>
+      </div>
+    </div>
+    <div style="margin-top:8px">
+      <div class="stat-row" style="font-size:0.9em">
+        <strong>HP <span id="hp-current">{{ lc.current_hp }}</span>/<span id="hp-max">{{ lc.max_hp }}</span><span id="hp-temp">{% if lc.temp_hp %} +{{ lc.temp_hp }}{% endif %}</span></strong>
+        <span class="meta">L{{ lc.level }} {{ lc.character_class or "" }}</span>
+      </div>
+      <div class="hp-bar"><div id="hp-fill" class="hp-fill {% if hp_pct < 30 %}low{% endif %}" style="width:{{ hp_pct }}%"></div></div>
+    </div>
+    <div id="conditions-row" class="meta" style="margin-top:6px; font-size:0.85em; display:{% if lc.conditions %}block{% else %}none{% endif %}">
+      conditions: <span id="conditions-list">{% for c in lc.conditions %}{{ c.name }}{% if not loop.last %}, {% endif %}{% endfor %}</span>
+    </div>
+  </div>
+
+  <div id="effects-panel" class="panel" style="display:none">
+    <strong style="font-size:0.9em">active effects</strong>
+    <div id="effects-list"></div>
+  </div>
+
+  <div class="panel actions" id="action-grid">
+    <button class="action-btn" data-act="attack">Attack</button>
+    <button class="action-btn" data-act="cast">Cast</button>
+    <button class="action-btn" data-act="dash">Dash</button>
+    <button class="action-btn" data-act="dodge">Dodge</button>
+    <button class="action-btn" data-act="disengage">Disengage</button>
+    <button class="action-btn danger" data-act="end-turn">End Turn</button>
+  </div>
+
+  <div class="panel move-section">
+    <div class="stat-row">
+      <strong>Movement</strong>
+      <span class="meta" id="move-readout">— ft used</span>
+    </div>
+    <div class="mode-toggle" style="margin-top:6px">
+      <button id="mode-step" class="active" onclick="setMode('step')">Step</button>
+      <button id="mode-trace" onclick="setMode('trace')">Path-trace</button>
+    </div>
+
+    <div id="step-pad">
+      {% if grid_type == 'hex' %}
+        <div class="dpad-hex">
+          <div class="row">
+            <button data-dir="NW">NW</button>
+            <button data-dir="NE">NE</button>
+          </div>
+          <div class="row">
+            <button data-dir="W">W</button>
+            <button data-dir="E">E</button>
+          </div>
+          <div class="row">
+            <button data-dir="SW">SW</button>
+            <button data-dir="SE">SE</button>
+          </div>
+        </div>
+      {% else %}
+        <div class="dpad-square">
+          <button data-dir="NW">↖</button>
+          <button data-dir="N">↑</button>
+          <button data-dir="NE">↗</button>
+          <button data-dir="W">←</button>
+          <button class="center" disabled>·</button>
+          <button data-dir="E">→</button>
+          <button data-dir="SW">↙</button>
+          <button data-dir="S">↓</button>
+          <button data-dir="SE">↘</button>
+        </div>
+      {% endif %}
+    </div>
+
+    <div id="trace-pad" style="display:none">
+      <p class="meta" style="margin:4px 0">Drag to pan. Tap a tile to preview the path on the projector. Then confirm.</p>
+      <div style="position:relative">
+        <div class="trace-viewport" id="trace-viewport" style="width:100%; height:60vh; overflow:auto; -webkit-overflow-scrolling:touch; background:#0c1115; border:1px solid var(--border); border-radius:6px; touch-action:pan-x pan-y;">
+          <canvas id="trace-canvas"></canvas>
+        </div>
+        <div id="trace-toast" style="position:absolute; top:8px; left:50%; transform:translateX(-50%); background:rgba(196,90,90,0.95); color:#fff; padding:6px 14px; border-radius:4px; font-size:0.9em; opacity:0; transition:opacity 250ms; pointer-events:none; z-index:10; white-space:nowrap;"></div>
+      </div>
+      <div id="trace-confirm" style="display:none; margin-top:6px; padding:8px; background:rgba(255,220,100,0.12); border:1px solid #d4a017; border-radius:6px; text-align:center">
+        <div id="trace-summary" style="margin-bottom:6px"></div>
+        <button id="trace-confirm-btn" class="action-btn primary" style="margin-right:6px">Confirm walk</button>
+        <button id="trace-cancel-btn" class="action-btn">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <div id="picker-host"></div>
+
+  <div id="page-toast" style="position:fixed; top:10px; left:50%; transform:translateX(-50%); background:rgba(50,55,62,0.95); color:#fff; padding:8px 16px; border-radius:6px; font-size:0.95em; opacity:0; transition:opacity 250ms; pointer-events:none; z-index:1000; white-space:nowrap; box-shadow:0 2px 8px rgba(0,0,0,0.4);"></div>
+
+</div>
+
+<script>
+(function() {
+  const root = document.querySelector('.ph');
+  const SESSION_ID = parseInt(root.dataset.sessionId);
+  const ACTOR_ID = parseInt(root.dataset.actorId);
+  const GRID_TYPE = root.dataset.gridType;
+  let lastState = null;
+  let mode = 'step';
+
+  function setMode(m) {
+    mode = m;
+    document.getElementById('mode-step').classList.toggle('active', m === 'step');
+    document.getElementById('mode-trace').classList.toggle('active', m === 'trace');
+    document.getElementById('step-pad').style.display = m === 'step' ? '' : 'none';
+    document.getElementById('trace-pad').style.display = m === 'trace' ? '' : 'none';
+  }
+  window.setMode = setMode;
+
+  function neighborCell(x, y, dir) {
+    if (GRID_TYPE === 'hex') {
+      // Pointy-top with offset rows. Row parity determines NE/NW/SE/SW deltas.
+      const oddRow = (y % 2) === 1;
+      switch (dir) {
+        case 'E':  return [x + 1, y];
+        case 'W':  return [x - 1, y];
+        case 'NE': return oddRow ? [x + 1, y - 1] : [x, y - 1];
+        case 'NW': return oddRow ? [x, y - 1] : [x - 1, y - 1];
+        case 'SE': return oddRow ? [x + 1, y + 1] : [x, y + 1];
+        case 'SW': return oddRow ? [x, y + 1] : [x - 1, y + 1];
+      }
+    } else {
+      switch (dir) {
+        case 'N':  return [x, y - 1];
+        case 'S':  return [x, y + 1];
+        case 'E':  return [x + 1, y];
+        case 'W':  return [x - 1, y];
+        case 'NE': return [x + 1, y - 1];
+        case 'NW': return [x - 1, y - 1];
+        case 'SE': return [x + 1, y + 1];
+        case 'SW': return [x - 1, y + 1];
+      }
+    }
+    return null;
+  }
+
+  async function fetchState() {
+    const res = await fetch(`/sessions/${SESSION_ID}/state`);
+    if (!res.ok) return null;
+    return await res.json();
+  }
+
+  function escapeHtml(s) {
+    return String(s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+  }
+
+  let _pageToastT = null;
+  function pageToast(msg, kind) {
+    const el = document.getElementById('page-toast');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.background = (kind === 'error') ? 'rgba(196,90,90,0.95)' : 'rgba(50,55,62,0.95)';
+    el.style.opacity = '1';
+    if (_pageToastT) clearTimeout(_pageToastT);
+    _pageToastT = setTimeout(() => { el.style.opacity = '0'; }, 1600);
+  }
+
+  let _traceToastT = null;
+  function traceToast(msg) {
+    const el = document.getElementById('trace-toast');
+    if (!el) return;
+    el.textContent = msg;
+    el.style.opacity = '1';
+    if (_traceToastT) clearTimeout(_traceToastT);
+    _traceToastT = setTimeout(() => { el.style.opacity = '0'; }, 1600);
+  }
+
+  function updateTurnBanner(state) {
+    const banner = document.getElementById('turn-banner');
+    if (!banner) return;
+    if (!state.in_combat) {
+      banner.className = 'turn-banner peace';
+      banner.textContent = 'Out of combat';
+      return;
+    }
+    const cur = (state.live_characters || []).find(c => c.is_current);
+    if (cur && cur.id === ACTOR_ID) {
+      banner.className = 'turn-banner mine';
+      banner.textContent = `Your turn — round ${state.round_number}`;
+    } else {
+      banner.className = 'turn-banner theirs';
+      banner.textContent = `${cur ? cur.name : '—'}'s turn — round ${state.round_number}`;
+    }
+  }
+
+  function updateCharacterPanel(me) {
+    if (!me) return;
+    if (me.current_hp !== undefined) document.getElementById('hp-current').textContent = me.current_hp;
+    if (me.max_hp !== undefined) document.getElementById('hp-max').textContent = me.max_hp;
+    document.getElementById('hp-temp').textContent = me.temp_hp ? ` +${me.temp_hp}` : '';
+    if (me.max_hp) {
+      const pct = Math.max(0, (me.current_hp / me.max_hp) * 100);
+      const fill = document.getElementById('hp-fill');
+      fill.style.width = pct + '%';
+      fill.classList.toggle('low', pct < 30);
+    }
+    if (me.armor_class !== undefined) document.getElementById('ac-pill').textContent = `AC ${me.armor_class}`;
+    if (me.speed_ft !== undefined) document.getElementById('spd-pill').textContent = `SPD ${me.speed_ft}`;
+    const conds = me.conditions || [];
+    const condRow = document.getElementById('conditions-row');
+    if (conds.length === 0) {
+      condRow.style.display = 'none';
+    } else {
+      condRow.style.display = 'block';
+      document.getElementById('conditions-list').textContent = conds.join(', ');
+    }
+  }
+
+  function updateEffectsPanel(state) {
+    const effects = (state.active_effects || []).filter(e => e.target_live_id === ACTOR_ID);
+    const panel = document.getElementById('effects-panel');
+    const list = document.getElementById('effects-list');
+    if (effects.length === 0) {
+      panel.style.display = 'none';
+      list.innerHTML = '';
+      return;
+    }
+    panel.style.display = '';
+    list.innerHTML = effects.map(eff => {
+      const meta = [];
+      if (eff.is_concentration) meta.push('(conc)');
+      if (eff.duration_rounds) meta.push(eff.duration_rounds + 'r');
+      if (!eff.handler_key) meta.push('note');
+      return `<div class="effect-row">
+        <strong>${escapeHtml(eff.name)}</strong>
+        <span class="meta">${meta.join(' ')}</span>
+        ${eff.description ? `<div class="meta">${escapeHtml(eff.description)}</div>` : ''}
+      </div>`;
+    }).join('');
+  }
+
+  async function refresh() {
+    lastState = await fetchState();
+    if (!lastState) return;
+    const me = (lastState.live_characters || []).find(c => c.id === ACTOR_ID);
+    updateTurnBanner(lastState);
+    updateCharacterPanel(me);
+    updateEffectsPanel(lastState);
+    if (!me) return;
+    const ts = lastState.turn_state || {};
+    const used = ts.movement_used_ft || 0;
+    document.getElementById('move-readout').textContent = `${used} ft used`;
+    document.querySelectorAll('#action-grid button').forEach(b => {
+      const a = b.dataset.act;
+      if (a === 'attack' || a === 'cast' || a === 'dash' || a === 'dodge' || a === 'disengage') {
+        b.classList.toggle('used', !!ts.action_used);
+      }
+    });
+  }
+
+  async function postJSON(url, body) {
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body || {}),
+    });
+    return await res.json().catch(() => ({}));
+  }
+
+  // Step d-pad
+  document.querySelectorAll('#step-pad button[data-dir]').forEach(btn => {
+    btn.addEventListener('click', async () => {
+      if (!lastState) return;
+      const me = (lastState.live_characters || []).find(c => c.id === ACTOR_ID);
+      if (!me || me.x === null || me.x === undefined) {
+        pageToast('No position on map', 'error');
+        return;
+      }
+      const next = neighborCell(me.x, me.y, btn.dataset.dir);
+      if (!next) return;
+      btn.disabled = true;
+      const r = await postJSON(`/sessions/${SESSION_ID}/walk`, {
+        target_id: ACTOR_ID,
+        path: [next],
+      });
+      btn.disabled = false;
+      if (r.committed === false) {
+        const reasons = { wall: 'wall in the way', not_adjacent: 'not adjacent', no_movement: 'not enough movement' };
+        pageToast(reasons[r.reason] || 'blocked', 'error');
+      }
+      refresh();
+    });
+  });
+
+  // Action buttons
+  function showPicker(html) {
+    document.getElementById('picker-host').innerHTML = html;
+  }
+  function clearPicker() { showPicker(''); }
+
+  async function doTurnAction(action, extra) {
+    const r = await postJSON(`/sessions/${SESSION_ID}/turn-action`,
+      Object.assign({ actor_id: ACTOR_ID, action }, extra || {}));
+    if (r.ok === false) pageToast(r.reason || 'blocked', 'error');
+    clearPicker();
+    refresh();
+  }
+
+  function attackPicker() {
+    const targets = (lastState?.live_characters || []).filter(c => c.id !== ACTOR_ID && c.is_active !== false && (c.current_hp === undefined || c.current_hp > 0));
+    let html = '<div class="panel"><strong>Pick a target</strong><div class="picker">';
+    for (const t of targets) {
+      const hp = t.current_hp !== undefined ? `${t.current_hp}/${t.max_hp}` : (t.status || '—');
+      html += `<div class="row ${t.is_enemy ? 'enemy' : ''}" onclick="window.__attackTarget(${t.id})">
+        <span>${t.name}</span><span class="meta">${hp}</span></div>`;
+    }
+    html += '</div><button onclick="window.__cancelPicker()" style="margin-top:6px">cancel</button></div>';
+    showPicker(html);
+  }
+  const BASIC_TO_HIT = {{ basic_to_hit }};
+  const BASIC_DAMAGE_DICE = {{ basic_damage_dice | tojson }};
+  const BASIC_DAMAGE_TYPE = {{ basic_damage_type | tojson }};
+  const SPELL_SAVE_DC = {{ spell_save_dc }};
+  const SPELL_ATK_MOD = {{ spell_attack_mod }};
+  const SPELLCASTING_MOD = {{ spellcasting_mod }};
+  const MOVEMENT_BUDGET = {{ movement_budget_ft }};
+
+  window.__attackTarget = async function(id) {
+    const target = (lastState.live_characters || []).find(c => c.id === id);
+    const me = (lastState.live_characters || []).find(c => c.id === ACTOR_ID);
+    let dist = 5;
+    if (target?.x != null && me?.x != null) {
+      const dx = target.x - me.x, dy = target.y - me.y;
+      dist = Math.round(Math.hypot(dx, dy) * (lastState.map?.feet_per_square || 5));
+    }
+    const fd = new FormData();
+    fd.append('attacker_id', ACTOR_ID);
+    fd.append('target_id', id);
+    fd.append('to_hit_modifier', String(BASIC_TO_HIT));
+    fd.append('damage_dice', BASIC_DAMAGE_DICE);
+    fd.append('damage_type', BASIC_DAMAGE_TYPE);
+    fd.append('distance_ft', String(dist));
+    await fetch(`/sessions/${SESSION_ID}/attack`, { method: 'POST', body: fd });
+    clearPicker();
+    refresh();
+  };
+  window.__cancelPicker = clearPicker;
+
+  function castPicker() {
+    const spells = {{ spells | tojson }};
+    let html = '<div class="panel"><strong>Cast</strong><div class="picker">';
+    for (const s of spells) {
+      const lvl = s.level === 0 ? 'cantrip' : `L${s.level}`;
+      html += `<div class="row" onclick="window.__pickSpell('${s.key}', '${s.name.replace(/'/g, "\\'")}', ${s.level || 0}, ${s.area ? 'true' : 'false'})">
+        <span>${s.name}</span><span class="meta">${lvl}</span></div>`;
+    }
+    html += '</div><button onclick="window.__cancelPicker()" style="margin-top:6px">cancel</button></div>';
+    showPicker(html);
+  }
+  window.__pickSpell = function(key, name, level, hasArea) {
+    if (hasArea) {
+      pageToast('AoE casts: use DM view for now', 'error');
+      clearPicker();
+      return;
+    }
+    const targets = (lastState.live_characters || []).filter(c => c.id !== ACTOR_ID && c.is_active !== false);
+    let html = `<div class="panel"><strong>Cast ${name}</strong><div class="picker">`;
+    for (const t of targets) {
+      html += `<div class="row ${t.is_enemy ? 'enemy' : ''}" onclick="window.__castOn('${key}', ${level}, ${t.id})">
+        <span>${t.name}</span></div>`;
+    }
+    html += `</div><button onclick="window.__cancelPicker()" style="margin-top:6px">cancel</button></div>`;
+    showPicker(html);
+  };
+  window.__castOn = async function(spellKey, level, targetId) {
+    const fd = new FormData();
+    fd.append('spell_name', spellKey);
+    fd.append('caster_id', ACTOR_ID);
+    fd.append('slot_level', String(Math.max(level, 1)));
+    fd.append('target_ids', String(targetId));
+    fd.append('spell_save_dc', String(SPELL_SAVE_DC));
+    fd.append('spell_attack_modifier', String(SPELL_ATK_MOD));
+    fd.append('spellcasting_modifier', String(SPELLCASTING_MOD));
+    await fetch(`/sessions/${SESSION_ID}/cast`, { method: 'POST', body: fd });
+    clearPicker();
+    refresh();
+  };
+
+  document.querySelectorAll('#action-grid button[data-act]').forEach(b => {
+    b.addEventListener('click', () => {
+      const a = b.dataset.act;
+      if (a === 'attack') return attackPicker();
+      if (a === 'cast') return castPicker();
+      doTurnAction(a);
+    });
+  });
+
+  // ---- Path-trace mini-map ----
+  const TRACE_CELL_PX = 64;
+  const HEX_W = Math.sqrt(3) / 2;
+  const ZONE_COLORS = {
+    bright: 'rgba(255,236,170,0.20)', dim: 'rgba(140,150,180,0.30)',
+    dark: 'rgba(0,0,0,0.40)', magical_dark: 'rgba(120,40,180,0.50)',
+    difficult: 'rgba(160,110,60,0.40)', water: 'rgba(60,140,200,0.40)',
+  };
+
+  function isHexMap() { return GRID_TYPE === 'hex'; }
+
+  function cellCenterUnits(x, y) {
+    if (isHexMap()) return [x * HEX_W + HEX_W / 2 + (y % 2) * HEX_W / 2, y * 0.75 + 0.5];
+    return [x + 0.5, y + 0.5];
+  }
+
+  function cellCenterPx(x, y) {
+    const [u, v] = cellCenterUnits(x, y);
+    return [u * TRACE_CELL_PX, v * TRACE_CELL_PX];
+  }
+
+  function pixelToCell(px, py, cols, rows) {
+    let best = null, bestDist = Infinity;
+    for (let y = 0; y < rows; y++) {
+      for (let x = 0; x < cols; x++) {
+        const [cx, cy] = cellCenterPx(x, y);
+        const dx = px - cx, dy = py - cy;
+        const d = dx * dx + dy * dy;
+        if (d < bestDist) { bestDist = d; best = [x, y]; }
+      }
+    }
+    return best;
+  }
+
+  function drawHex(ctx, cx, cy, size) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = Math.PI / 2 + i * Math.PI / 3;
+      const x = cx + size * Math.cos(a);
+      const y = cy + size * Math.sin(a);
+      if (i === 0) ctx.moveTo(x, y); else ctx.lineTo(x, y);
+    }
+    ctx.closePath();
+  }
+
+  function renderTraceMap(state) {
+    if (!state || !state.map) return;
+    const m = state.map;
+    const cols = m.grid_cols, rows = m.grid_rows;
+    const isHex = m.grid_type === 'hex';
+    const mapW = isHex ? Math.ceil((cols + 0.5) * HEX_W * TRACE_CELL_PX) : cols * TRACE_CELL_PX;
+    const mapH = isHex ? Math.ceil((1 + (rows - 1) * 0.75) * TRACE_CELL_PX) : rows * TRACE_CELL_PX;
+    const canvas = document.getElementById('trace-canvas');
+    if (!canvas) return;
+    canvas.width = mapW; canvas.height = mapH;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = '#1a1f24';
+    ctx.fillRect(0, 0, mapW, mapH);
+
+    const finishOverlays = () => {
+      // Zones
+      for (const z of (m.zones || [])) {
+        ctx.fillStyle = ZONE_COLORS[z.type] || 'rgba(255,255,255,0.05)';
+        if (z.shape === 'circle') {
+          ctx.beginPath();
+          ctx.arc(z.cx * TRACE_CELL_PX, z.cy * TRACE_CELL_PX, z.r * TRACE_CELL_PX, 0, Math.PI*2);
+          ctx.fill();
+        } else if (z.shape === 'polygon') {
+          const pts = z.points || [];
+          if (pts.length >= 3) {
+            ctx.beginPath();
+            ctx.moveTo(pts[0][0] * TRACE_CELL_PX, pts[0][1] * TRACE_CELL_PX);
+            for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0] * TRACE_CELL_PX, pts[i][1] * TRACE_CELL_PX);
+            ctx.closePath(); ctx.fill();
+          }
+        } else {
+          ctx.fillRect(z.x * TRACE_CELL_PX, z.y * TRACE_CELL_PX, z.w * TRACE_CELL_PX, z.h * TRACE_CELL_PX);
+        }
+      }
+      // Walls
+      ctx.strokeStyle = '#1a1a1a';
+      ctx.lineWidth = 5; ctx.lineCap = 'round';
+      for (const w of (m.walls || [])) {
+        ctx.beginPath();
+        ctx.moveTo(w.x1 * TRACE_CELL_PX, w.y1 * TRACE_CELL_PX);
+        ctx.lineTo(w.x2 * TRACE_CELL_PX, w.y2 * TRACE_CELL_PX);
+        ctx.stroke();
+      }
+      // Grid
+      ctx.strokeStyle = 'rgba(255,255,255,0.18)'; ctx.lineWidth = 1;
+      if (isHex) {
+        for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+          const [cx, cy] = cellCenterPx(c, r);
+          drawHex(ctx, cx, cy, TRACE_CELL_PX / 2); ctx.stroke();
+        }
+      } else {
+        for (let x = 0; x <= cols; x++) { ctx.beginPath(); ctx.moveTo(x * TRACE_CELL_PX, 0); ctx.lineTo(x * TRACE_CELL_PX, rows * TRACE_CELL_PX); ctx.stroke(); }
+        for (let y = 0; y <= rows; y++) { ctx.beginPath(); ctx.moveTo(0, y * TRACE_CELL_PX); ctx.lineTo(cols * TRACE_CELL_PX, y * TRACE_CELL_PX); ctx.stroke(); }
+      }
+      // Tokens
+      for (const lc of (state.live_characters || [])) {
+        if (lc.x == null) continue;
+        const [cx, cy] = cellCenterPx(lc.x, lc.y);
+        const r = TRACE_CELL_PX * 0.4;
+        ctx.beginPath(); ctx.arc(cx, cy, r, 0, Math.PI*2);
+        ctx.fillStyle = lc.is_enemy ? '#c45a5a' : '#2a9d8f'; ctx.fill();
+        ctx.strokeStyle = '#0a0d10'; ctx.lineWidth = 3; ctx.stroke();
+        ctx.fillStyle = '#fff';
+        ctx.font = `bold ${Math.round(TRACE_CELL_PX * 0.32)}px sans-serif`;
+        ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText((lc.name || '?').slice(0, 2).toUpperCase(), cx, cy);
+      }
+      // Pending walk overlay
+      const pw = state.pending_walk;
+      if (pw && pw.actor_id === ACTOR_ID && pw.path && pw.path.length) {
+        ctx.strokeStyle = 'rgba(255,220,100,0.85)'; ctx.lineWidth = 6; ctx.lineCap = 'round';
+        const [sx, sy] = cellCenterPx(pw.from[0], pw.from[1]);
+        ctx.beginPath(); ctx.moveTo(sx, sy);
+        for (const p of pw.path) {
+          const [ex, ey] = cellCenterPx(p[0], p[1]);
+          ctx.lineTo(ex, ey);
+        }
+        ctx.stroke();
+        // Dot at destination
+        const last = pw.path[pw.path.length - 1];
+        const [lx, ly] = cellCenterPx(last[0], last[1]);
+        ctx.beginPath(); ctx.arc(lx, ly, TRACE_CELL_PX * 0.18, 0, Math.PI*2);
+        ctx.fillStyle = '#ffd86b'; ctx.fill();
+      }
+      maybeCenterOnActor(state);
+    };
+
+    if (m.image_path) {
+      const img = new Image();
+      img.onload = () => { ctx.drawImage(img, 0, 0, mapW, mapH); finishOverlays(); };
+      img.onerror = finishOverlays;
+      img.src = m.image_path;
+    } else {
+      finishOverlays();
+    }
+  }
+
+  let traceCenteredOnce = false;
+  function maybeCenterOnActor(state) {
+    if (traceCenteredOnce) return;
+    const me = (state.live_characters || []).find(c => c.id === ACTOR_ID);
+    if (!me || me.x == null) return;
+    const [cx, cy] = cellCenterPx(me.x, me.y);
+    const vp = document.getElementById('trace-viewport');
+    if (!vp) return;
+    vp.scrollLeft = Math.max(0, cx - vp.clientWidth / 2);
+    vp.scrollTop  = Math.max(0, cy - vp.clientHeight / 2);
+    traceCenteredOnce = true;
+  }
+
+  // Tap handling: native click fires only on stationary taps (not scroll-pans),
+  // so the browser handles tap-vs-scroll for us — no manual movement threshold.
+  (function() {
+    const canvas = document.getElementById('trace-canvas');
+    if (!canvas) return;
+    canvas.style.cursor = 'pointer';
+    canvas.addEventListener('click', async (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const scaleX = canvas.width / rect.width;
+      const scaleY = canvas.height / rect.height;
+      const px = (e.clientX - rect.left) * scaleX;
+      const py = (e.clientY - rect.top) * scaleY;
+      if (!lastState?.map) return;
+      const cell = pixelToCell(px, py, lastState.map.grid_cols, lastState.map.grid_rows);
+      if (!cell) return;
+      const r = await postJSON(`/sessions/${SESSION_ID}/preview-walk`, {
+        actor_id: ACTOR_ID, x: cell[0], y: cell[1],
+      });
+      if (r.ok === false) {
+        // Don't clear or hide the previously valid path — keep it visible.
+        const reasons = { unreachable: 'not enough movement', no_movement: 'not enough movement' };
+        traceToast(reasons[r.reason] || 'unreachable');
+      }
+    });
+  })();
+
+  function updateTraceConfirmPanel(state) {
+    const pw = state.pending_walk;
+    const panel = document.getElementById('trace-confirm');
+    if (!panel) return;
+    if (pw && pw.actor_id === ACTOR_ID && pw.path && pw.path.length) {
+      const last = pw.path[pw.path.length - 1];
+      document.getElementById('trace-summary').textContent =
+        `Destination (${last[0]}, ${last[1]}) — ${pw.cost_ft || 0} ft`;
+      panel.style.display = '';
+    } else {
+      panel.style.display = 'none';
+    }
+  }
+
+  document.getElementById('trace-confirm-btn')?.addEventListener('click', async () => {
+    await postJSON(`/sessions/${SESSION_ID}/confirm-walk`, {});
+    refresh();
+  });
+  document.getElementById('trace-cancel-btn')?.addEventListener('click', async () => {
+    await postJSON(`/sessions/${SESSION_ID}/clear-preview`, {});
+    refresh();
+  });
+
+  // Hook trace rendering into refresh
+  const _origRefresh = refresh;
+  refresh = async function() {
+    await _origRefresh();
+    if (mode === 'trace' && lastState) {
+      renderTraceMap(lastState);
+      updateTraceConfirmPanel(lastState);
+    }
+  };
+
+  // Re-render trace when toggled on
+  const _origSetMode = setMode;
+  setMode = function(m) {
+    _origSetMode(m);
+    if (m === 'trace' && lastState) {
+      renderTraceMap(lastState);
+      updateTraceConfirmPanel(lastState);
+    }
+  };
+  window.setMode = setMode;
+
+  function connectSSE() {
+    const es = new EventSource(`/sessions/${SESSION_ID}/events`);
+    es.addEventListener('state_changed', () => refresh());
+    es.onerror = () => { setTimeout(connectSSE, 2000); es.close(); };
+  }
+  refresh();
+  connectSSE();
+})();
+</script>
+{% endif %}
+{% endblock %}

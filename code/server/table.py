@@ -5,7 +5,7 @@ from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from sqlmodel import Session, select
 
-from db import get_session, GameSession, LiveCharacter, Character, Campaign
+from db import get_session, GameSession, LiveCharacter, Character, Campaign, ActiveEffect
 
 router = APIRouter()
 templates = Jinja2Templates(directory="templates")
@@ -19,13 +19,24 @@ def _active_pushed_session(db: Session) -> GameSession | None:
     ).first()
 
 
+def _seat_override(gs: GameSession, seat: int) -> dict | None:
+    overrides = gs.seat_overrides or {}
+    return overrides.get(str(seat)) or overrides.get("all")
+
+
 @router.get("/table/seat/{seat}", response_class=HTMLResponse)
-def table_seat(seat: int, request: Request, db: Session = Depends(get_session)):
+def table_seat(seat: int, request: Request, view: str = "sheet", db: Session = Depends(get_session)):
     if seat not in VALID_SEATS:
         raise HTTPException(404, "no such seat")
     gs = _active_pushed_session(db)
     if not gs:
         return templates.TemplateResponse(request, "table_waiting.html", {"seat": seat})
+
+    override = _seat_override(gs, seat)
+    if override:
+        return templates.TemplateResponse(request, "table_override.html", {
+            "seat": seat, "gs": gs, "override": override, "refresh_seconds": 0, "show_tabs": False,
+        })
 
     campaign = db.get(Campaign, gs.campaign_id)
     seat_assignments = gs.seat_assignments or {}
@@ -34,16 +45,26 @@ def table_seat(seat: int, request: Request, db: Session = Depends(get_session)):
         lc = db.get(LiveCharacter, int(claimed_id))
         if lc:
             char = db.get(Character, lc.source_character_id) if lc.source_character_id else None
-            return templates.TemplateResponse(request, "table_sheet.html", {
-                "seat": seat,
-                "gs": gs,
-                "campaign": campaign,
-                "lc": lc,
-                "char": char,
+            active_effects = db.exec(
+                select(ActiveEffect).where(
+                    ActiveEffect.session_id == gs.id,
+                    ActiveEffect.target_live_id == lc.id,
+                )
+            ).all()
+            ctx = {
+                "seat": seat, "gs": gs, "campaign": campaign,
+                "lc": lc, "char": char, "view": view,
+                "active_effects": active_effects,
                 "live_characters": db.exec(
                     select(LiveCharacter).where(LiveCharacter.session_id == gs.id)
                 ).all(),
-            })
+            }
+            if view == "map":
+                ctx["refresh_seconds"] = 0  # SSE-driven, no meta refresh
+                tmpl = "table_map.html"
+            else:
+                tmpl = "table_sheet.html"
+            return templates.TemplateResponse(request, tmpl, ctx)
 
     claimed_ids = {int(v) for v in seat_assignments.values()}
     candidates = db.exec(

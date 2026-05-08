@@ -76,7 +76,9 @@
       <select id="zone-shape" style="width:auto; margin:0">
         <option value="rect">rectangle</option>
         <option value="circle">circle</option>
+        <option value="polygon">polygon</option>
       </select>
+      <button type="button" class="small secondary" data-tool="building">building</button>
       <button type="button" class="small secondary" data-tool="draw">draw</button>
       <input type="color" id="draw-color" value="#3ab5a6" style="width:36px; height:28px; padding:0; margin:0">
       <button type="button" class="small secondary" data-tool="erase">erase</button>
@@ -91,10 +93,40 @@
     <div id="map-container" data-map-id="{{ active_map.id }}" data-cols="{{ active_map.grid_cols }}" data-rows="{{ active_map.grid_rows }}" data-image="{{ active_map.image_path or '' }}"
          style="position:relative; max-width:100%; overflow:auto; background:#0c1115; border:1px solid var(--border); border-radius:8px; user-select:none">
     </div>
-    <p class="meta">move = drag tokens · wall = drag to draw line segments (block sight) · zone = drag corner-to-corner to mark light/terrain · erase = click on a wall or zone to remove</p>
+    <p class="meta">move = drag tokens · wall = drag to draw segments · building = click corners then dbl-click/Enter to close · zone = drag corner-to-corner (polygon shape: click vertices, dbl-click/Enter to close) · erase = click on a wall or zone to remove</p>
   {% else %}
     <p class="meta">no map loaded. <a href="/campaigns/{{ campaign.id }}/maps">create or pick one →</a></p>
   {% endif %}
+</div>
+{% endif %}
+
+{% if gs.pending_actions %}
+<div class="panel" style="border-color: var(--warn, #d4a574)">
+  <h2 style="display:inline-block">Pending {% if is_dm %}DM Approval{% else %}Approvals{% endif %}</h2>
+  <span class="meta" style="margin-left:8px">{{ gs.pending_actions|length }} waiting</span>
+  {% for p in gs.pending_actions %}
+    <div class="row" style="justify-content:space-between; padding:8px 0; border-top:1px solid var(--border)">
+      <div>
+        <strong>{{ p.summary }}</strong>
+        <span class="meta"> · by {{ p.requested_by_username }}</span>
+        <div class="meta">
+          {% for label in p.flag_labels %}<span class="pill warn" style="margin-right:4px">{{ label }}</span>{% endfor %}
+        </div>
+      </div>
+      {% if is_dm %}
+        <div class="row" style="gap:6px">
+          <form method="post" action="/sessions/{{ gs.id }}/pending/{{ p.id }}/approve" style="margin:0">
+            <button type="submit" class="small">approve</button>
+          </form>
+          <form method="post" action="/sessions/{{ gs.id }}/pending/{{ p.id }}/deny" style="margin:0">
+            <button type="submit" class="small secondary">deny</button>
+          </form>
+        </div>
+      {% else %}
+        <span class="meta">awaiting DM</span>
+      {% endif %}
+    </div>
+  {% endfor %}
 </div>
 {% endif %}
 
@@ -233,11 +265,13 @@
         </form>
 
         {% if not lc.is_enemy %}
-        <form method="post" action="/sessions/{{ gs.id }}/cast" class="inline-form">
+        <form method="post" action="/sessions/{{ gs.id }}/cast" class="inline-form cast-form" data-caster-id="{{ lc.id }}">
           <input type="hidden" name="caster_id" value="{{ lc.id }}">
+          <input type="hidden" name="aoe_x" value="">
+          <input type="hidden" name="aoe_y" value="">
           <label>cast</label>
-          <select name="spell_name">
-            {% for s in spells %}<option value="{{ s.key }}">L{{ s.level }} {{ s.name }}</option>{% endfor %}
+          <select name="spell_name" class="spell-select">
+            {% for s in spells %}<option value="{{ s.key }}" data-area='{{ s.area|tojson if s.area else "null" }}' data-range="{{ s.range_ft }}" data-target-type="{{ s.target_type }}">L{{ s.level }} {{ s.name }}{% if s.area %} ({{ s.area.shape }}){% endif %}</option>{% endfor %}
           </select>
           <label>slot</label><input type="number" name="slot_level" value="1" style="width:50px">
           <label>target</label>
@@ -259,6 +293,16 @@
 </div>
 
 {% if is_dm %}
+{% if gs.undo_stack %}
+<div class="panel">
+  <h3>Undo</h3>
+  <p class="meta">last action: {{ gs.undo_stack[-1].label }} <span style="color:var(--text-faint)">({{ gs.undo_stack|length }} on stack)</span></p>
+  <form method="post" action="/sessions/{{ gs.id }}/undo">
+    <button type="submit" class="secondary">undo last action</button>
+  </form>
+</div>
+{% endif %}
+
 <div class="panel">
   <h3>Table</h3>
   {% if gs.pushed_to_table %}
@@ -267,7 +311,10 @@
       {% for seat in [1,2,3,4,5,6] %}
         <div class="seat-row">
           <span class="seat-num">seat {{ seat }}</span>
-          <span>{% set claimed_id = gs.seat_assignments.get(seat|string) %}{% if claimed_id %}{% for lc in live_characters %}{% if lc.id == claimed_id %}{{ lc.name }}{% endif %}{% endfor %}{% else %}<span class="meta">open</span>{% endif %}</span>
+          <span>
+            {% set claimed_id = gs.seat_assignments.get(seat|string) %}{% if claimed_id %}{% for lc in live_characters %}{% if lc.id == claimed_id %}{{ lc.name }}{% endif %}{% endfor %}{% else %}<span class="meta">open</span>{% endif %}
+            {% set ov = (gs.seat_overrides or {}).get(seat|string) %}{% if ov %} <span class="pill warn">override: {{ ov.kind }}</span>{% endif %}
+          </span>
         </div>
       {% endfor %}
     </div>
@@ -280,6 +327,47 @@
     </form>
   {% endif %}
 </div>
+
+{% if gs.pushed_to_table %}
+<div class="panel">
+  <h3>Seat overrides</h3>
+  <p class="meta">push an image/video URL or text to one or all seat screens. clear by leaving the URL blank.</p>
+  <form method="post" action="" id="seat-override-form" class="inline-form">
+    <label>seat</label>
+    <select name="seat_target" style="width:auto">
+      <option value="all">all seats</option>
+      {% for s in [1,2,3,4,5,6] %}<option value="{{ s }}">seat {{ s }}</option>{% endfor %}
+    </select>
+    <label>kind</label>
+    <select name="kind" style="width:auto">
+      <option value="image">image</option>
+      <option value="video">video</option>
+      <option value="text">text</option>
+    </select>
+    <input type="text" name="url" placeholder="image URL, video URL, or text" style="flex:1; min-width:240px">
+    <button type="submit" class="small">push</button>
+  </form>
+  {% set overrides = gs.seat_overrides or {} %}
+  {% if overrides %}
+  <div style="margin-top:8px">
+    {% for seat_key, ov in overrides.items() %}
+      <div class="row" style="justify-content:space-between; padding:4px 0">
+        <span><span class="meta">{{ seat_key }}:</span> {{ ov.kind }} — <span class="meta" style="word-break:break-all">{{ ov.url[:80] }}{% if ov.url|length > 80 %}…{% endif %}</span></span>
+        <form method="post" action="/sessions/{{ gs.id }}/seat/{{ seat_key }}/clear-override" style="margin:0">
+          <button type="submit" class="small secondary">clear</button>
+        </form>
+      </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <script>
+    document.getElementById('seat-override-form').addEventListener('submit', function(e) {
+      const seat = this.querySelector('[name=seat_target]').value;
+      this.action = `/sessions/{{ gs.id }}/seat/${seat}/override`;
+    });
+  </script>
+</div>
+{% endif %}
 
 <div class="panel">
   <h3>Spawn enemy</h3>
@@ -350,6 +438,44 @@
   let dragOffset = {x: 0, y: 0};
   let drawing = null;
   let dragShape = null;  // {type:'wall'|'zone', startX, startY, currentX, currentY}
+  let polyDraft = null;  // {kind:'zone'|'building', points:[[x,y],...], hover:[x,y]}
+
+  // Hex math (pointy-top, matching server's vision.py and the grid renderer).
+  const HEX_W = Math.sqrt(3) / 2;        // grid-units between hex column centers
+  const HEX_V_SPACING = 0.75;            // grid-units between hex row centers
+  function isHex() { return (lastState?.map?.grid_type || 'square') === 'hex'; }
+  function cellCenter(col, row) {
+    if (isHex()) {
+      return [col * HEX_W + HEX_W/2 + (row % 2) * HEX_W/2, row * HEX_V_SPACING + 0.5];
+    }
+    return [col + 0.5, row + 0.5];
+  }
+  function pixelToCell(fx, fy) {
+    // fx, fy in grid units. Returns nearest cell.
+    if (isHex()) {
+      let best = {x: 0, y: 0, d: Infinity};
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const cx = c * HEX_W + HEX_W/2 + (r % 2) * HEX_W/2;
+          const cy = r * HEX_V_SPACING + 0.5;
+          const d = (fx - cx) ** 2 + (fy - cy) ** 2;
+          if (d < best.d) best = {x: c, y: r, d};
+        }
+      }
+      return {x: best.x, y: best.y};
+    }
+    return {x: Math.floor(fx), y: Math.floor(fy)};
+  }
+  function hexPath(ctx, cxPx, cyPx, sizePx) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = Math.PI/2 + i * Math.PI/3;
+      const px = cxPx + sizePx * Math.cos(a);
+      const py = cyPx + sizePx * Math.sin(a);
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+  }
 
   const ZONE_COLORS = {
     bright: 'rgba(255,236,170,0.18)',
@@ -487,14 +613,22 @@
   }
 
   function drawFogDM(canvas, state) {
-    // DM sees everything; show explored fog as dim translucent overlay (so DM can see what's revealed)
     const ctx = canvas.getContext('2d');
     ctx.clearRect(0,0,dispW,dispH);
     const revealed = new Set((state.fog_revealed || []).map(([x,y]) => `${x},${y}`));
     if ((state.fog_revealed || []).length === 0) return;
     ctx.fillStyle = 'rgba(0,0,0,0.30)';
+    const hex = isHex();
+    const cellSize = hex ? SQUARE_PX / 2 : SQUARE_PX;
     for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
-      if (!revealed.has(`${x},${y}`)) ctx.fillRect(x*SQUARE_PX, y*SQUARE_PX, SQUARE_PX, SQUARE_PX);
+      if (revealed.has(`${x},${y}`)) continue;
+      if (hex) {
+        const [cx, cy] = cellCenter(x, y);
+        hexPath(ctx, cx*SQUARE_PX, cy*SQUARE_PX, cellSize);
+        ctx.fill();
+      } else {
+        ctx.fillRect(x*SQUARE_PX, y*SQUARE_PX, SQUARE_PX, SQUARE_PX);
+      }
     }
   }
 
@@ -514,6 +648,21 @@
         ctx.fillStyle = ZONE_BORDER[z.type] || '#aaa';
         ctx.font = `${Math.max(8, SQUARE_PX*0.5)}px Inter, sans-serif`;
         ctx.fillText(z.type, (z.cx - z.r)*SQUARE_PX + 4, (z.cy - z.r)*SQUARE_PX + 12);
+      } else if (z.shape === 'polygon') {
+        const pts = z.points || [];
+        if (pts.length >= 3) {
+          ctx.beginPath();
+          ctx.moveTo(pts[0][0]*SQUARE_PX, pts[0][1]*SQUARE_PX);
+          for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0]*SQUARE_PX, pts[i][1]*SQUARE_PX);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+          let minX = pts[0][0], minY = pts[0][1];
+          for (const p of pts) { if (p[0] < minX) minX = p[0]; if (p[1] < minY) minY = p[1]; }
+          ctx.fillStyle = ZONE_BORDER[z.type] || '#aaa';
+          ctx.font = `${Math.max(8, SQUARE_PX*0.5)}px Inter, sans-serif`;
+          ctx.fillText(z.type, minX*SQUARE_PX + 3, minY*SQUARE_PX + 12);
+        }
       } else {
         ctx.fillRect(z.x*SQUARE_PX, z.y*SQUARE_PX, z.w*SQUARE_PX, z.h*SQUARE_PX);
         ctx.strokeRect(z.x*SQUARE_PX, z.y*SQUARE_PX, z.w*SQUARE_PX, z.h*SQUARE_PX);
@@ -565,7 +714,10 @@
       t.className = 'token ' + (lc.is_enemy ? 'enemy' : 'pc') + (lc.is_current ? ' current' : '');
       t.dataset.lcId = lc.id;
       const size = Math.max(20, SQUARE_PX * 0.85);
-      t.style.cssText = `position:absolute;display:flex;align-items:center;justify-content:center;border-radius:50%;color:#fff;font-weight:700;font-size:0.85em;pointer-events:auto;cursor:grab;width:${size}px;height:${size}px;left:${lc.x*SQUARE_PX + (SQUARE_PX-size)/2}px;top:${lc.y*SQUARE_PX + (SQUARE_PX-size)/2}px;background:${lc.is_enemy?'#c45a5a':'#2a9d8f'};box-shadow:0 0 0 2px rgba(0,0,0,0.6)${lc.is_current?',0 0 0 3px #ffd86b':''};${lc.current_hp !== undefined && lc.current_hp <= 0 ? 'opacity:0.4;filter:grayscale(1);' : ''}`;
+      const [cx, cy] = cellCenter(lc.x, lc.y);
+      const leftPx = cx * SQUARE_PX - size/2;
+      const topPx = cy * SQUARE_PX - size/2;
+      t.style.cssText = `position:absolute;display:flex;align-items:center;justify-content:center;border-radius:50%;color:#fff;font-weight:700;font-size:0.85em;pointer-events:auto;cursor:grab;width:${size}px;height:${size}px;left:${leftPx}px;top:${topPx}px;background:${lc.is_enemy?'#c45a5a':'#2a9d8f'};box-shadow:0 0 0 2px rgba(0,0,0,0.6)${lc.is_current?',0 0 0 3px #ffd86b':''};${lc.current_hp !== undefined && lc.current_hp <= 0 ? 'opacity:0.4;filter:grayscale(1);' : ''}`;
       t.title = lc.name + (lc.current_hp !== undefined ? ` (${lc.current_hp}/${lc.max_hp})` : '');
       t.textContent = lc.name.slice(0,2).toUpperCase();
       t.addEventListener('mousedown', e => {
@@ -574,7 +726,8 @@
         e.preventDefault();
         dragToken = lc.id;
         const rect = container.getBoundingClientRect();
-        dragOffset = { x: e.clientX - rect.left - lc.x * SQUARE_PX, y: e.clientY - rect.top - lc.y * SQUARE_PX };
+        // Track offset from cursor to token center (works for both grid types).
+        dragOffset = { x: e.clientX - rect.left - cx * SQUARE_PX, y: e.clientY - rect.top - cy * SQUARE_PX };
         t.style.cursor = 'grabbing';
       });
       layer.appendChild(t);
@@ -606,6 +759,74 @@
   function clearPreview() {
     const c = document.getElementById('preview-canvas');
     if (c) c.getContext('2d').clearRect(0,0,dispW,dispH);
+  }
+
+  function drawPolyDraft() {
+    const c = document.getElementById('preview-canvas');
+    if (!c || !polyDraft) return;
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0,0,dispW,dispH);
+    const pts = polyDraft.points;
+    if (pts.length === 0) return;
+    const isZone = polyDraft.kind === 'zone';
+    if (isZone) {
+      const zoneType = document.getElementById('zone-type').value;
+      ctx.fillStyle = ZONE_COLORS[zoneType];
+      ctx.strokeStyle = ZONE_BORDER[zoneType];
+    } else {
+      ctx.strokeStyle = '#ff4d4d';
+    }
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0]*SQUARE_PX, pts[0][1]*SQUARE_PX);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0]*SQUARE_PX, pts[i][1]*SQUARE_PX);
+    if (polyDraft.hover) ctx.lineTo(polyDraft.hover[0]*SQUARE_PX, polyDraft.hover[1]*SQUARE_PX);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (isZone && pts.length >= 2) {
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0]*SQUARE_PX, pts[0][1]*SQUARE_PX);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0]*SQUARE_PX, pts[i][1]*SQUARE_PX);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.fillStyle = '#fff';
+    for (const p of pts) {
+      ctx.beginPath();
+      ctx.arc(p[0]*SQUARE_PX, p[1]*SQUARE_PX, 3, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+
+  function commitPolyDraft() {
+    if (!polyDraft || polyDraft.points.length < 3) {
+      polyDraft = null;
+      clearPreview();
+      return;
+    }
+    if (polyDraft.kind === 'zone') {
+      const zt = document.getElementById('zone-type').value;
+      postJSON(`/sessions/${SESSION_ID}/zones`, {
+        action: 'add', type: zt, shape: 'polygon',
+        points: polyDraft.points,
+      });
+    } else {
+      // Building: a closed wall chain. Post each segment.
+      const pts = polyDraft.points;
+      const n = pts.length;
+      const promises = [];
+      for (let i = 0; i < n; i++) {
+        const a = pts[i], b = pts[(i+1) % n];
+        promises.push(postJSON(`/sessions/${SESSION_ID}/walls`, {
+          action: 'add', x1: a[0], y1: a[1], x2: b[0], y2: b[1],
+        }));
+      }
+      // refresh once after all done
+      Promise.all(promises).then(() => refresh());
+    }
+    polyDraft = null;
+    clearPreview();
   }
   function drawPreview() {
     const c = document.getElementById('preview-canvas');
@@ -646,13 +867,53 @@
   function onInteractDown(e) {
     const f = pixelToFloat(e);
     const sq = pixelToSquare(e);
+    if (activeCast) {
+      const cell = pixelToCell(f.x, f.y);
+      const form = activeCast.form;
+      const caster = (lastState?.live_characters || []).find(lc => lc.id === activeCast.casterId);
+      function setHidden(name, value) {
+        let inp = form.querySelector(`input[name=${name}]`);
+        if (!inp) {
+          inp = document.createElement('input');
+          inp.type = 'hidden'; inp.name = name;
+          form.appendChild(inp);
+        }
+        inp.value = value;
+      }
+      if ((activeCast.area.shape === 'cone' || activeCast.area.shape === 'line') && caster) {
+        // origin = caster, direction snapped to 8-way from cursor
+        setHidden('aoe_x', caster.x);
+        setHidden('aoe_y', caster.y);
+        const [ccx, ccy] = cellCenter(caster.x, caster.y);
+        const ang = Math.atan2(f.y - ccy, f.x - ccx);
+        const snap = Math.round(ang / (Math.PI/4)) * (Math.PI/4);
+        setHidden('aoe_dx', Math.round(Math.cos(snap)));
+        setHidden('aoe_dy', Math.round(Math.sin(snap)));
+      } else {
+        setHidden('aoe_x', cell.x);
+        setHidden('aoe_y', cell.y);
+      }
+      const data = new FormData(form);
+      fetch(form.action, { method: 'POST', body: data, redirect: 'manual' }).then(() => location.reload());
+      exitAoeMode();
+      return;
+    }
     if (currentTool === 'wall') {
       const sx = Math.round(f.x), sy = Math.round(f.y);
       dragShape = { type: 'wall', startX: sx, startY: sy, currentX: sx, currentY: sy };
+    } else if (currentTool === 'building') {
+      const px = Math.round(f.x*2)/2, py = Math.round(f.y*2)/2;
+      if (!polyDraft || polyDraft.kind !== 'building') polyDraft = { kind: 'building', points: [] };
+      polyDraft.points.push([px, py]);
+      drawPolyDraft();
     } else if (currentTool === 'zone') {
       const shape = document.getElementById('zone-shape').value;
       if (shape === 'circle') {
         dragShape = { type: 'zone', shape: 'circle', startX: f.x, startY: f.y, currentX: f.x, currentY: f.y };
+      } else if (shape === 'polygon') {
+        if (!polyDraft || polyDraft.kind !== 'zone') polyDraft = { kind: 'zone', points: [] };
+        polyDraft.points.push([f.x, f.y]);
+        drawPolyDraft();
       } else {
         dragShape = { type: 'zone', shape: 'rect', startX: sq.x, startY: sq.y, currentX: sq.x+1, currentY: sq.y+1 };
       }
@@ -670,6 +931,22 @@
   }
 
   function onInteractMove(e) {
+    if (activeCast) {
+      const f = pixelToFloat(e);
+      const cell = pixelToCell(f.x, f.y);
+      activeCast.hoverX = cell.x;
+      activeCast.hoverY = cell.y;
+      drawAoePreview();
+      return;
+    }
+    if (polyDraft) {
+      const f = pixelToFloat(e);
+      polyDraft.hover = polyDraft.kind === 'building'
+        ? [Math.round(f.x*2)/2, Math.round(f.y*2)/2]
+        : [f.x, f.y];
+      drawPolyDraft();
+      return;
+    }
     if (drawing) {
       const f = pixelToFloat(e);
       const last = drawing.points[drawing.points.length - 1];
@@ -705,9 +982,13 @@
   function onInteractUp(e) {
     if (dragToken !== null) {
       const rect = container.getBoundingClientRect();
-      const x = Math.floor((e.clientX - rect.left - dragOffset.x + SQUARE_PX/2) / SQUARE_PX);
-      const y = Math.floor((e.clientY - rect.top - dragOffset.y + SQUARE_PX/2) / SQUARE_PX);
-      postJSON(`/sessions/${SESSION_ID}/move`, {target_id: dragToken, x: Math.max(0, Math.min(COLS-1, x)), y: Math.max(0, Math.min(ROWS-1, y))});
+      // dragOffset is cursor-to-token-center; new center is cursor minus that offset.
+      const newCxGrid = (e.clientX - rect.left - dragOffset.x) / SQUARE_PX;
+      const newCyGrid = (e.clientY - rect.top - dragOffset.y) / SQUARE_PX;
+      const cell = pixelToCell(newCxGrid, newCyGrid);
+      const x = Math.max(0, Math.min(COLS-1, cell.x));
+      const y = Math.max(0, Math.min(ROWS-1, cell.y));
+      postJSON(`/sessions/${SESSION_ID}/move`, {target_id: dragToken, x, y});
       dragToken = null;
     }
     if (drawing && drawing.points.length > 1) {
@@ -739,6 +1020,150 @@
       dragShape = null;
       clearPreview();
     }
+  }
+
+  // ---- AoE targeting mode ----
+  let activeCast = null;  // {casterId, area, rangeFt, form, hoverX, hoverY}
+
+  function feetPerSquare() { return lastState?.map?.feet_per_square || 5; }
+
+  function drawAoePreview() {
+    const c = document.getElementById('preview-canvas');
+    if (!c || !activeCast) return;
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, dispW, dispH);
+    const fps = feetPerSquare();
+    // Caster position circle (range ring)
+    const caster = (lastState?.live_characters || []).find(lc => lc.id === activeCast.casterId);
+    if (caster && caster.x !== null && caster.x !== undefined && activeCast.rangeFt > 0) {
+      const [ccx, ccy] = cellCenter(caster.x, caster.y);
+      const rangePx = (activeCast.rangeFt / fps) * SQUARE_PX;
+      ctx.strokeStyle = 'rgba(58, 181, 166, 0.7)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      ctx.arc(ccx*SQUARE_PX, ccy*SQUARE_PX, rangePx, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (activeCast.hoverX === undefined) return;
+    // Check if hover is within range
+    let inRange = true;
+    if (caster && caster.x !== null && activeCast.rangeFt > 0) {
+      const [ccx, ccy] = cellCenter(caster.x, caster.y);
+      const [hcx, hcy] = cellCenter(activeCast.hoverX, activeCast.hoverY);
+      const distFt = Math.hypot(hcx - ccx, hcy - ccy) * fps;
+      inRange = distFt <= activeCast.rangeFt;
+    }
+    const fill = inRange ? 'rgba(255, 100, 60, 0.30)' : 'rgba(120, 120, 120, 0.30)';
+    const stroke = inRange ? 'rgba(255, 80, 40, 0.85)' : 'rgba(120, 120, 120, 0.7)';
+    const area = activeCast.area;
+    const [hcx, hcy] = cellCenter(activeCast.hoverX, activeCast.hoverY);
+    ctx.fillStyle = fill;
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 2;
+    if (area.shape === 'sphere') {
+      const radPx = (area.radius_ft / fps) * SQUARE_PX;
+      ctx.beginPath();
+      ctx.arc(hcx*SQUARE_PX, hcy*SQUARE_PX, radPx, 0, Math.PI*2);
+      ctx.fill(); ctx.stroke();
+    } else if (area.shape === 'cube') {
+      const sizePx = (area.size_ft / fps) * SQUARE_PX;
+      ctx.fillRect(activeCast.hoverX*SQUARE_PX, activeCast.hoverY*SQUARE_PX, sizePx, sizePx);
+      ctx.strokeRect(activeCast.hoverX*SQUARE_PX, activeCast.hoverY*SQUARE_PX, sizePx, sizePx);
+    } else if (area.shape === 'cone' || area.shape === 'line') {
+      // Origin = caster cell; direction = caster -> cursor.
+      if (!caster || caster.x === null || caster.x === undefined) return;
+      const [ccx, ccy] = cellCenter(caster.x, caster.y);
+      const dx = hcx - ccx, dy = hcy - ccy;
+      const dlen = Math.hypot(dx, dy) || 1;
+      const ux = dx / dlen, uy = dy / dlen;
+      const x0 = ccx * SQUARE_PX, y0 = ccy * SQUARE_PX;
+      if (area.shape === 'cone') {
+        const lengthPx = (area.size_ft / fps) * SQUARE_PX;
+        const halfAngle = Math.PI / 4;  // 90deg cone
+        const cosH = Math.cos(halfAngle), sinH = Math.sin(halfAngle);
+        const e1x = x0 + lengthPx * (ux * cosH - uy * sinH);
+        const e1y = y0 + lengthPx * (uy * cosH + ux * sinH);
+        const e2x = x0 + lengthPx * (ux * cosH + uy * sinH);
+        const e2y = y0 + lengthPx * (uy * cosH - ux * sinH);
+        const startA = Math.atan2(e1y - y0, e1x - x0);
+        const endA = Math.atan2(e2y - y0, e2x - x0);
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(e1x, e1y);
+        ctx.arc(x0, y0, lengthPx, startA, endA);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+      } else {
+        const lengthPx = (area.length_ft / fps) * SQUARE_PX;
+        const widthPx = ((area.width_ft || fps) / fps) * SQUARE_PX;
+        const px = -uy, py = ux;
+        const halfW = widthPx / 2;
+        const cs = [
+          [x0 + px*halfW, y0 + py*halfW],
+          [x0 - px*halfW, y0 - py*halfW],
+          [x0 - px*halfW + ux*lengthPx, y0 - py*halfW + uy*lengthPx],
+          [x0 + px*halfW + ux*lengthPx, y0 + py*halfW + uy*lengthPx],
+        ];
+        ctx.beginPath();
+        ctx.moveTo(cs[0][0], cs[0][1]);
+        for (let i = 1; i < 4; i++) ctx.lineTo(cs[i][0], cs[i][1]);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+      }
+    }
+  }
+
+  function enterAoeMode() {
+    document.body.style.cursor = 'crosshair';
+    const interact = document.getElementById('interact-layer');
+    if (interact) interact.style.pointerEvents = 'auto';
+  }
+
+  function exitAoeMode() {
+    activeCast = null;
+    document.body.style.cursor = '';
+    clearPreview();
+    updateInteractMode();
+  }
+
+  document.querySelectorAll('.cast-form').forEach(form => {
+    form.addEventListener('submit', e => {
+      const sel = form.querySelector('.spell-select');
+      if (!sel) return;
+      const opt = sel.selectedOptions[0];
+      const areaRaw = opt.dataset.area;
+      const area = (!areaRaw || areaRaw === 'null') ? null : JSON.parse(areaRaw);
+      if (!area) return;  // single-target: normal submit
+      e.preventDefault();
+      activeCast = {
+        casterId: parseInt(form.dataset.casterId),
+        area,
+        rangeFt: parseFloat(opt.dataset.range || 0),
+        form,
+        hoverX: undefined, hoverY: undefined,
+      };
+      enterAoeMode();
+      drawAoePreview();
+    });
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      if (activeCast) exitAoeMode();
+      if (polyDraft) { polyDraft = null; clearPreview(); }
+    } else if ((e.key === 'Enter' || e.key === ' ') && polyDraft) {
+      e.preventDefault();
+      commitPolyDraft();
+    }
+  });
+
+  // dblclick to commit polygon
+  if (container) {
+    container.addEventListener('dblclick', e => {
+      if (polyDraft) { e.preventDefault(); commitPolyDraft(); }
+    });
   }
 
   async function refresh() {

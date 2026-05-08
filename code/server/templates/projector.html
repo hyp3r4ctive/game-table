@@ -51,6 +51,26 @@ const SESSION_ID = {{ session_id }};
 const PERSPECTIVE = 'party';  // projector = party perspective (vision-filtered)
 let SQUARE_PX = 50;
 let cols = 0, rows = 0;
+let GRID_TYPE = 'square';
+let FEET_PER_SQUARE = 5;
+
+const HEX_W = Math.sqrt(3) / 2;
+const HEX_V_SPACING = 0.75;
+function isHex() { return GRID_TYPE === 'hex'; }
+function cellCenter(col, row) {
+  if (isHex()) return [col * HEX_W + HEX_W/2 + (row % 2) * HEX_W/2, row * HEX_V_SPACING + 0.5];
+  return [col + 0.5, row + 0.5];
+}
+function hexPath(ctx, cxPx, cyPx, sizePx) {
+  ctx.beginPath();
+  for (let i = 0; i < 6; i++) {
+    const a = Math.PI/2 + i * Math.PI/3;
+    const px = cxPx + sizePx * Math.cos(a);
+    const py = cyPx + sizePx * Math.sin(a);
+    if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+  }
+  ctx.closePath();
+}
 
 // High-contrast colors for projection. Avoid pure black; favor saturated bright tints.
 const ZONE_COLORS = {
@@ -70,26 +90,91 @@ async function fetchState() {
   } catch (e) { return null; }
 }
 
+// Physical projection geometry (server-supplied so it matches projection.py).
+const PLAY_W_IN = {{ play_w }};
+const PLAY_H_IN = {{ play_h }};
+const LIP_IN = {{ lip }};
+const PLAYER_DEFAULT_MARGIN_IN = {{ player_default_margin }};
+const PLAYER_GEOMETRY_MARGIN_IN = {{ player_geometry_margin }};
+const DM_EDGE = "{{ dm_edge }}";
+
+function effectiveInsetPx() {
+  const pxPerInchX = window.innerWidth / PLAY_W_IN;
+  const pxPerInchY = window.innerHeight / PLAY_H_IN;
+  let leftIn = LIP_IN, rightIn = LIP_IN, topIn = LIP_IN, bottomIn = LIP_IN;
+  const extra = PLAYER_DEFAULT_MARGIN_IN + PLAYER_GEOMETRY_MARGIN_IN;
+  if (DM_EDGE === 'left') rightIn += extra;
+  else if (DM_EDGE === 'right') leftIn += extra;
+  else if (DM_EDGE === 'top') bottomIn += extra;
+  else if (DM_EDGE === 'bottom') topIn += extra;
+  return {
+    leftPx: leftIn * pxPerInchX, rightPx: rightIn * pxPerInchX,
+    topPx: topIn * pxPerInchY, bottomPx: bottomIn * pxPerInchY,
+    pxPerInch: Math.min(pxPerInchX, pxPerInchY),
+  };
+}
+
+function gridFootprintCells(state) {
+  const c = state.map.grid_cols, r = state.map.grid_rows;
+  if ((state.map.grid_type || 'square') === 'hex') {
+    return { wCells: (c + 0.5) * (Math.sqrt(3) / 2), hCells: 0.75 * r + 0.25 };
+  }
+  return { wCells: c, hCells: r };
+}
+
 function fitToWindow(state) {
   cols = state.map.grid_cols;
   rows = state.map.grid_rows;
-  const margin = 20;
-  const availW = window.innerWidth - margin;
-  const availH = window.innerHeight - margin;
+  GRID_TYPE = state.map.grid_type || 'square';
+  FEET_PER_SQUARE = state.map.feet_per_square || 5;
+  const ipc = state.map.inches_per_square || 1.0;
+  const inset = effectiveInsetPx();
+  const availW = window.innerWidth - inset.leftPx - inset.rightPx;
+  const availH = window.innerHeight - inset.topPx - inset.bottomPx;
+
+  // Physical-scale cell size: each cell renders at exactly inches_per_square
+  // physical inches. If the map's footprint exceeds the inset rect, fall back
+  // to fit-to-rect scaling (legacy/oversized maps).
+  const fp = gridFootprintCells(state);
+  let cellPx = ipc * inset.pxPerInch;
+  const physW = fp.wCells * cellPx;
+  const physH = fp.hCells * cellPx;
+  if (physW > availW || physH > availH) {
+    cellPx = Math.min(availW / fp.wCells, availH / fp.hCells);
+  }
+  SQUARE_PX = cellPx;
+  const w = fp.wCells * cellPx;
+  const h = fp.hCells * cellPx;
+
+  // Position: align to the player edge (opposite the DM); center on the cross axis.
+  let leftPx, topPx;
+  if (DM_EDGE === 'left') {
+    leftPx = window.innerWidth - inset.rightPx - w;
+    topPx = inset.topPx + (availH - h) / 2;
+  } else if (DM_EDGE === 'right') {
+    leftPx = inset.leftPx;
+    topPx = inset.topPx + (availH - h) / 2;
+  } else if (DM_EDGE === 'top') {
+    leftPx = inset.leftPx + (availW - w) / 2;
+    topPx = window.innerHeight - inset.bottomPx - h;
+  } else if (DM_EDGE === 'bottom') {
+    leftPx = inset.leftPx + (availW - w) / 2;
+    topPx = inset.topPx;
+  } else {
+    leftPx = inset.leftPx + (availW - w) / 2;
+    topPx = inset.topPx + (availH - h) / 2;
+  }
+  window.__projPos = { leftPx, topPx };
+
   if (state.map.image_path) {
     return new Promise(resolve => {
       const img = new Image();
-      img.onload = () => {
-        const scale = Math.min(availW / (cols), availH / (rows));
-        SQUARE_PX = scale;
-        resolve({ w: cols * SQUARE_PX, h: rows * SQUARE_PX, src: state.map.image_path });
-      };
-      img.onerror = () => resolve({ w: cols * Math.min(availW/cols, availH/rows), h: rows * Math.min(availW/cols, availH/rows), src: null });
+      img.onload = () => resolve({ w, h, src: state.map.image_path });
+      img.onerror = () => resolve({ w, h, src: null });
       img.src = state.map.image_path;
     });
   }
-  SQUARE_PX = Math.min(availW / cols, availH / rows);
-  return Promise.resolve({ w: cols * SQUARE_PX, h: rows * SQUARE_PX, src: null });
+  return Promise.resolve({ w, h, src: null });
 }
 
 function drawZones(canvas, state) {
@@ -101,6 +186,15 @@ function drawZones(canvas, state) {
       ctx.beginPath();
       ctx.arc(z.cx*SQUARE_PX, z.cy*SQUARE_PX, z.r*SQUARE_PX, 0, Math.PI*2);
       ctx.fill();
+    } else if (z.shape === 'polygon') {
+      const pts = z.points || [];
+      if (pts.length >= 3) {
+        ctx.beginPath();
+        ctx.moveTo(pts[0][0]*SQUARE_PX, pts[0][1]*SQUARE_PX);
+        for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0]*SQUARE_PX, pts[i][1]*SQUARE_PX);
+        ctx.closePath();
+        ctx.fill();
+      }
     } else {
       ctx.fillRect(z.x*SQUARE_PX, z.y*SQUARE_PX, z.w*SQUARE_PX, z.h*SQUARE_PX);
     }
@@ -150,19 +244,19 @@ function drawFogAndVision(canvas, state) {
   ctx.clearRect(0,0,canvas.width,canvas.height);
   const explored = new Set((state.fog_revealed || []).map(([x,y]) => `${x},${y}`));
   const visible = new Set((state.currently_visible || []).map(([x,y]) => `${x},${y}`));
-  // Rear projection wants the image to remain primarily bright.
-  //   currently visible -> no overlay (white/map shows through)
-  //   explored only     -> medium grey overlay (cool, dim memory)
-  //   never seen        -> dark grey overlay (NOT pure black, so the projector still emits light)
+  const hex = isHex();
+  const hexSize = SQUARE_PX / 2;
   for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
     const key = `${x},${y}`;
     if (visible.has(key)) continue;
-    if (explored.has(key)) {
-      ctx.fillStyle = 'rgba(120, 125, 140, 0.55)';  // medium grey, slight cool tint
+    ctx.fillStyle = explored.has(key) ? 'rgba(120, 125, 140, 0.55)' : 'rgba(60, 65, 80, 0.85)';
+    if (hex) {
+      const [cx, cy] = cellCenter(x, y);
+      hexPath(ctx, cx*SQUARE_PX, cy*SQUARE_PX, hexSize);
+      ctx.fill();
     } else {
-      ctx.fillStyle = 'rgba(60, 65, 80, 0.85)';     // dark grey, never pure black
+      ctx.fillRect(x*SQUARE_PX, y*SQUARE_PX, SQUARE_PX, SQUARE_PX);
     }
-    ctx.fillRect(x*SQUARE_PX, y*SQUARE_PX, SQUARE_PX, SQUARE_PX);
   }
 }
 
@@ -185,16 +279,16 @@ function drawVisionCircles(canvas, state) {
   ctx.clearRect(0,0,canvas.width,canvas.height);
   for (const v of (state.vision_circles || [])) {
     if (v.x === null || v.x === undefined) continue;
-    const cx = (v.x + 0.5) * SQUARE_PX;
-    const cy = (v.y + 0.5) * SQUARE_PX;
-    const SQUARE_FT = 5;
+    const [cgx, cgy] = cellCenter(v.x, v.y);
+    const cx = cgx * SQUARE_PX;
+    const cy = cgy * SQUARE_PX;
     const ranges = [
       { ft: v.light_emission_ft, fill: 'rgba(255, 200, 80, 0.18)', stroke: 'rgba(220,150,30,0.7)' },
       { ft: v.darkvision_ft, fill: 'rgba(60, 120, 220, 0.10)', stroke: 'rgba(40,90,180,0.55)' },
     ];
     for (const r of ranges) {
       if (!r.ft) continue;
-      const radPx = (r.ft / SQUARE_FT) * SQUARE_PX;
+      const radPx = (r.ft / FEET_PER_SQUARE) * SQUARE_PX;
       ctx.fillStyle = r.fill;
       ctx.beginPath(); ctx.arc(cx, cy, radPx, 0, Math.PI*2); ctx.fill();
       ctx.strokeStyle = r.stroke;
@@ -204,6 +298,43 @@ function drawVisionCircles(canvas, state) {
   }
 }
 
+function drawPendingWalk(canvas, state) {
+  const ctx = canvas.getContext('2d');
+  ctx.clearRect(0, 0, canvas.width, canvas.height);
+  const pw = state.pending_walk;
+  if (!pw || !pw.path || !pw.path.length || !pw.from) return;
+  ctx.strokeStyle = 'rgba(212, 160, 23, 0.95)';
+  ctx.lineWidth = Math.max(4, SQUARE_PX * 0.16);
+  ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+  const [sx, sy] = cellCenter(pw.from[0], pw.from[1]);
+  ctx.beginPath();
+  ctx.moveTo(sx * SQUARE_PX, sy * SQUARE_PX);
+  for (const p of pw.path) {
+    const [px, py] = cellCenter(p[0], p[1]);
+    ctx.lineTo(px * SQUARE_PX, py * SQUARE_PX);
+  }
+  ctx.stroke();
+  // Step pips
+  ctx.fillStyle = 'rgba(212, 160, 23, 0.9)';
+  for (const p of pw.path) {
+    const [px, py] = cellCenter(p[0], p[1]);
+    ctx.beginPath();
+    ctx.arc(px * SQUARE_PX, py * SQUARE_PX, Math.max(3, SQUARE_PX * 0.10), 0, Math.PI * 2);
+    ctx.fill();
+  }
+  // Cost label at the destination
+  const last = pw.path[pw.path.length - 1];
+  const [lx, ly] = cellCenter(last[0], last[1]);
+  ctx.fillStyle = '#1a1a1a';
+  ctx.strokeStyle = 'rgba(255, 230, 150, 0.95)'; ctx.lineWidth = 4;
+  ctx.font = `bold ${Math.max(14, Math.round(SQUARE_PX * 0.55))}px sans-serif`;
+  ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  const text = `${pw.cost_ft || 0} ft`;
+  const tx = lx * SQUARE_PX, ty = ly * SQUARE_PX - SQUARE_PX * 0.7;
+  ctx.strokeText(text, tx, ty);
+  ctx.fillText(text, tx, ty);
+}
+
 function renderTokens(layer, state) {
   layer.innerHTML = '';
   for (const lc of state.live_characters) {
@@ -211,10 +342,11 @@ function renderTokens(layer, state) {
     const t = document.createElement('div');
     t.className = 'token ' + (lc.is_enemy ? 'enemy' : 'pc') + (lc.is_current ? ' current' : '');
     const size = Math.max(20, SQUARE_PX * 0.85);
+    const [cx, cy] = cellCenter(lc.x, lc.y);
     t.style.width = size + 'px';
     t.style.height = size + 'px';
-    t.style.left = (lc.x * SQUARE_PX + (SQUARE_PX - size) / 2) + 'px';
-    t.style.top = (lc.y * SQUARE_PX + (SQUARE_PX - size) / 2) + 'px';
+    t.style.left = (cx * SQUARE_PX - size / 2) + 'px';
+    t.style.top = (cy * SQUARE_PX - size / 2) + 'px';
     t.title = lc.name;
     t.textContent = lc.name.slice(0, 2).toUpperCase();
     if (lc.current_hp !== undefined && lc.current_hp <= 0) t.classList.add('dead');
@@ -245,6 +377,10 @@ async function render() {
   wrap.innerHTML = '';
 
   const dims = await fitToWindow(state);
+  const pos = window.__projPos || { leftPx: 0, topPx: 0 };
+  wrap.style.position = 'absolute';
+  wrap.style.left = pos.leftPx + 'px';
+  wrap.style.top = pos.topPx + 'px';
   wrap.style.width = dims.w + 'px';
   wrap.style.height = dims.h + 'px';
 
@@ -270,11 +406,14 @@ async function render() {
   tokenLayer.style.width = dims.w + 'px'; tokenLayer.style.height = dims.h + 'px';
   wrap.appendChild(tokenLayer);
 
+  const pathCanvas = makeCanvas(wrap, 'path-canvas', dims.w, dims.h);
+
   drawZones(zoneCanvas, state);
   drawVisionCircles(visionCanvas, state);
   drawWalls(wallCanvas, state);
   drawFogAndVision(fogCanvas, state);
   drawGrid(gridCanvas, state);
+  drawPendingWalk(pathCanvas, state);
   renderTokens(tokenLayer, state);
 
   document.getElementById('status-bar').style.display = state.in_combat ? '' : 'none';

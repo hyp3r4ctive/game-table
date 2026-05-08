@@ -48,17 +48,95 @@ class CastResult:
     notes: list[str] = field(default_factory=list)
 
 
-def get_spell(name: str) -> Optional[dict]:
-    key = name.lower().replace(" ", "_").replace("-", "_")
-    return SPELLS.get(key)
+def _normalize_key(name: str) -> str:
+    return name.lower().replace(" ", "_").replace("-", "_")
 
 
-def list_all_spells() -> list[dict]:
-    return [{"key": k, **v} for k, v in SPELLS.items()]
+def _spell_row_to_dict(row) -> dict:
+    """Convert a Spell SQL row into the same shape as the JSON entries."""
+    base = {
+        "key": row.key,
+        "name": row.name,
+        "level": row.level,
+        "school": row.school,
+        "casting_time": row.casting_time,
+        "range_ft": row.range_ft,
+        "duration": row.duration,
+        "concentration": row.concentration,
+        "components": row.components or [],
+        "material_component": row.material_component or "",
+        "effect_type": row.effect_type,
+        "requires_sight": row.requires_sight,
+        "target_type": row.target_type,
+        "description": row.description or "",
+    }
+    for k in ("damage", "healing", "save", "area", "attack", "darts", "beams",
+             "hp_threshold", "conditions_applied", "scaling"):
+        v = getattr(row, k, None)
+        if v:
+            base[k] = v
+    if row.max_targets is not None:
+        base["max_targets"] = row.max_targets
+    if row.valid_targets:
+        base["valid_targets"] = row.valid_targets
+    return base
 
 
-def list_spells_by_level(level: int) -> list[dict]:
-    return [{"key": k, **v} for k, v in SPELLS.items() if v["level"] == level]
+def get_spell(name: str, db_session=None, campaign_id: int | None = None) -> Optional[dict]:
+    """Look up a spell by name. If a DB session is given, prefer a campaign-scoped
+    custom spell, then a global custom spell, then fall back to the JSON catalog.
+    """
+    key = _normalize_key(name)
+    if db_session is not None:
+        from sqlmodel import select
+        try:
+            from db import Spell
+        except ImportError:
+            Spell = None
+        if Spell is not None:
+            if campaign_id is not None:
+                row = db_session.exec(
+                    select(Spell).where(Spell.key == key, Spell.campaign_id == campaign_id)
+                ).first()
+                if row:
+                    return _spell_row_to_dict(row)
+            row = db_session.exec(
+                select(Spell).where(Spell.key == key, Spell.campaign_id == None)  # noqa: E711
+            ).first()
+            if row:
+                return _spell_row_to_dict(row)
+    spell = SPELLS.get(key)
+    if spell:
+        return {"key": key, **spell}
+    return None
+
+
+def list_all_spells(db_session=None, campaign_id: int | None = None) -> list[dict]:
+    """JSON catalog merged with DB spells (campaign-scoped wins over global wins over JSON)."""
+    out: dict[str, dict] = {k: {"key": k, **v} for k, v in SPELLS.items()}
+    if db_session is not None:
+        from sqlmodel import select
+        try:
+            from db import Spell
+        except ImportError:
+            Spell = None
+        if Spell is not None:
+            globals_rows = db_session.exec(
+                select(Spell).where(Spell.campaign_id == None)  # noqa: E711
+            ).all()
+            for row in globals_rows:
+                out[row.key] = _spell_row_to_dict(row)
+            if campaign_id is not None:
+                campaign_rows = db_session.exec(
+                    select(Spell).where(Spell.campaign_id == campaign_id)
+                ).all()
+                for row in campaign_rows:
+                    out[row.key] = _spell_row_to_dict(row)
+    return list(out.values())
+
+
+def list_spells_by_level(level: int, db_session=None, campaign_id: int | None = None) -> list[dict]:
+    return [s for s in list_all_spells(db_session, campaign_id) if s.get("level") == level]
 
 
 def _scaled_damage_dice(spell: dict, slot_level: int) -> Optional[str]:
@@ -104,14 +182,17 @@ def cast_spell(
     aoe_origin: Optional[grid.GridPoint] = None,
     aoe_direction: tuple[int, int] = (1, 0),
     creatures_in_range: list = None,
+    spell_data: Optional[dict] = None,
+    feet_per_square: int = 5,
 ) -> CastResult:
     """Resolve a spell cast.
 
     target_names: explicitly targeted creatures (for single/multi-target)
     aoe_origin: where the AoE is centered (for area spells)
     creatures_in_range: list of objects with .name and .position attributes - server filters to those in AoE
+    spell_data: pre-resolved spell dict; pass this to avoid redundant lookup or to use a campaign-scoped override.
     """
-    spell = get_spell(spell_name)
+    spell = spell_data if spell_data is not None else get_spell(spell_name)
     if not spell:
         raise ValueError(f"Unknown spell: {spell_name}")
 
@@ -129,7 +210,7 @@ def cast_spell(
 
     # Compute AoE squares if applicable
     if "area" in spell and aoe_origin is not None:
-        affected = grid.compute_area(spell["area"], aoe_origin, aoe_direction)
+        affected = grid.compute_area(spell["area"], aoe_origin, aoe_direction, feet_per_square)
         result.affected_squares = sorted(affected)
         in_area = grid.creatures_in_area(creatures_in_range, affected)
         target_names = [c.name for c in in_area]

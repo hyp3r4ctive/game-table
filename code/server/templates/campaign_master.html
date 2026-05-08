@@ -18,7 +18,9 @@
 <p class="meta">
   <a href="/campaigns/{{ campaign.id }}">player view</a> ·
   <a href="/campaigns/{{ campaign.id }}/maps">maps</a> ·
-  <a href="/campaigns/{{ campaign.id }}/requests">join requests</a>
+  <a href="/campaigns/{{ campaign.id }}/spells">custom spells</a> ·
+  <a href="/campaigns/{{ campaign.id }}/requests">join requests</a> ·
+  <a href="/admin/table-overview" target="_blank">table overview</a>
   {% if active_session %} · <a href="/sessions/{{ active_session.id }}"><span class="pill warn">live session →</span></a>{% endif %}
 </p>
 
@@ -116,6 +118,38 @@
   {% else %}
     <p class="meta">no maps yet. <a href="/campaigns/{{ campaign.id }}/maps">create one →</a></p>
   {% endif %}
+</div>
+
+<div class="panel">
+  <h2>Campaign rules</h2>
+  <p class="meta">Enforcement rules with leeway hold violating player actions for DM approval. Combat/movement choices change how the engine resolves the action.</p>
+  <form method="post" action="/campaigns/{{ campaign.id }}/rules">
+    {% for cat in rule_categories %}
+      {% set entries = [] %}
+      {% for k, d in rule_definitions.items() %}{% if d.category == cat %}{% set _ = entries.append((k, d)) %}{% endif %}{% endfor %}
+      {% if entries %}
+        <h3 style="margin-top:14px; font-size:0.85em; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.06em">{{ cat }}</h3>
+        {% for key, defn in entries %}
+          <div style="margin-bottom:10px">
+            {% if defn.type == "bool" %}
+              <label><input type="checkbox" name="rule_{{ key }}" {% if rules.get(key, defn.default) %}checked{% endif %}> {{ defn.label }}</label>
+            {% elif defn.type == "choice" %}
+              <label style="display:flex; flex-direction:column; gap:3px; max-width:480px">
+                <span>{{ defn.label }}</span>
+                <select name="rule_{{ key }}">
+                  {% for val, opt_label in defn.options %}
+                    <option value="{{ val }}" {% if rules.get(key, defn.default) == val %}selected{% endif %}>{{ opt_label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+            {% endif %}
+            {% if defn.description %}<div class="meta" style="margin-left: {% if defn.type == 'bool' %}22px{% else %}0{% endif %}; font-size: 0.82em; margin-top:2px">{{ defn.description }}</div>{% endif %}
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endfor %}
+    <button type="submit" class="small" style="margin-top:8px">save rules</button>
+  </form>
 </div>
 
 <div class="panel">

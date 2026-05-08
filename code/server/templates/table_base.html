@@ -2,7 +2,9 @@
 <html>
 <head>
   <title>seat {{ seat }}</title>
+  {% if refresh_seconds|default(5) > 0 %}
   <meta http-equiv="refresh" content="{{ refresh_seconds|default(5) }}">
+  {% endif %}
   <style>
     :root {
       --bg-base: #14171a;
@@ -73,10 +75,23 @@
     th { color: var(--text-faint); font-weight: 500; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.05em; }
     .conditions { color: #b0a0d0; }
     .meta { color: var(--text-faint); font-size: 0.88em; }
+    .seat-tabs { display: flex; gap: 6px; margin-bottom: 10px; }
+    .seat-tabs a {
+      flex: 1; text-align: center; padding: 10px 14px;
+      background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px;
+      color: var(--text-dim); text-decoration: none; font-weight: 500;
+    }
+    .seat-tabs a.active { background: var(--teal); color: #fff; border-color: var(--teal); }
   </style>
 </head>
 <body>
   <span class="seat-tag">seat {{ seat }}</span>
+  {% if show_tabs|default(true) %}
+  <div class="seat-tabs">
+    <a href="/table/seat/{{ seat }}?view=sheet" class="{% if view|default('sheet') == 'sheet' %}active{% endif %}">character</a>
+    <a href="/table/seat/{{ seat }}?view=map" class="{% if view|default('sheet') == 'map' %}active{% endif %}">map</a>
+  </div>
+  {% endif %}
   {% block content %}{% endblock %}
 </body>
 </html>

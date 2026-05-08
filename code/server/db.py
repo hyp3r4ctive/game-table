@@ -75,6 +75,7 @@ class Campaign(SQLModel, table=True):
     description: str = ""
     is_one_shot: bool = False
     is_active: bool = True
+    rules: dict = Field(default_factory=dict, sa_column=Column(JSON))
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -113,11 +114,23 @@ class GameSession(SQLModel, table=True):
     round_number: int = 0
     current_turn_index: int = 0
     initiative_order: list = Field(default_factory=list, sa_column=Column(JSON))
+    # Per-turn state for the current creature, reset on next_turn().
+    action_used: bool = False
+    bonus_action_used: bool = False
+    reaction_used: bool = False
+    movement_used_ft: int = 0
+    movement_extra_ft: int = 0  # bonus from Dash, Haste, etc.
+    is_dodging: bool = False
+    is_disengaging: bool = False
     event_log: list = Field(default_factory=list, sa_column=Column(JSON))
     seat_assignments: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    seat_overrides: dict = Field(default_factory=dict, sa_column=Column(JSON))
     active_map_id: Optional[int] = Field(default=None, foreign_key="map.id")
     fog_revealed: list = Field(default_factory=list, sa_column=Column(JSON))
     drawings: list = Field(default_factory=list, sa_column=Column(JSON))
+    pending_actions: list = Field(default_factory=list, sa_column=Column(JSON))
+    pending_walk: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    undo_stack: list = Field(default_factory=list, sa_column=Column(JSON))
     started_at: datetime = Field(default_factory=datetime.utcnow)
     ended_at: Optional[datetime] = None
 
@@ -129,9 +142,45 @@ class Map(SQLModel, table=True):
     image_path: Optional[str] = None
     grid_cols: int = 60
     grid_rows: int = 48
-    grid_type: str = "square"  # "square" or "hex" (flat-top)
+    grid_type: str = "square"  # "square" or "hex" (pointy-top)
+    feet_per_square: int = 5  # in-game distance per cell (D&D 5e default)
+    inches_per_square: float = 1.0  # physical inches per cell on the table
     walls: list = Field(default_factory=list, sa_column=Column(JSON))
     zones: list = Field(default_factory=list, sa_column=Column(JSON))
+    created_at: datetime = Field(default_factory=datetime.utcnow)
+
+
+class Spell(SQLModel, table=True):
+    id: Optional[int] = Field(default=None, primary_key=True)
+    campaign_id: Optional[int] = Field(default=None, foreign_key="campaign.id", index=True)
+    key: str = Field(index=True)
+    name: str
+    level: int = 0
+    school: str = ""
+    casting_time: str = "action"
+    range_ft: int = 0
+    duration: str = "instantaneous"
+    concentration: bool = False
+    components: list = Field(default_factory=list, sa_column=Column(JSON))
+    material_component: str = ""
+    effect_type: str = ""
+    requires_sight: bool = True
+    target_type: str = "creature_seen"
+    damage: list = Field(default_factory=list, sa_column=Column(JSON))
+    healing: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    save: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    area: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    attack: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    darts: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    beams: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    hp_threshold: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    conditions_applied: list = Field(default_factory=list, sa_column=Column(JSON))
+    scaling: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    max_targets: Optional[int] = None
+    valid_targets: str = ""
+    description: str = ""
+    is_homebrew: bool = False
+    created_by_user_id: Optional[int] = Field(default=None, foreign_key="user.id")
     created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
@@ -164,6 +213,32 @@ class LiveCharacter(SQLModel, table=True):
     light_emission_ft: int = 0
     conditions: list = Field(default_factory=list, sa_column=Column(JSON))
     spell_slots: dict = Field(default_factory=dict, sa_column=Column(JSON))
+
+
+class ActiveEffect(SQLModel, table=True):
+    """In-flight effect on a live character or on an area of the map.
+
+    target_live_id null  → area effect (use `area` for shape/position)
+    handler_key blank    → freeform/noted-only (engine ticks duration, no math hook)
+    is_concentration true → tied to caster's concentration; only one per caster
+    """
+    id: Optional[int] = Field(default=None, primary_key=True)
+    session_id: int = Field(foreign_key="gamesession.id", index=True)
+    target_live_id: Optional[int] = Field(default=None, foreign_key="livecharacter.id", index=True)
+    caster_live_id: Optional[int] = Field(default=None, foreign_key="livecharacter.id")
+    spell_key: str = ""
+    name: str
+    description: str = ""
+    handler_key: str = ""
+    is_concentration: bool = False
+    duration_rounds: Optional[int] = None
+    duration_basis: str = "caster_end_of_turn"
+    save_each_turn: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    area: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    payload: dict = Field(default_factory=dict, sa_column=Column(JSON))
+    started_round: int = 0
+    started_turn_index: int = 0
+    created_at: datetime = Field(default_factory=datetime.utcnow)
 
 
 _SQLITE_TYPE_MAP = {

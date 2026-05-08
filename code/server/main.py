@@ -12,7 +12,9 @@ from auth import hash_password, verify_password, get_current_user, get_current_u
 from sessions import router as sessions_router
 from table import router as table_router
 from maps import router as maps_router
+from spells_admin import router as spells_admin_router
 from projector import router as projector_router
+from game.rules import RULE_DEFINITIONS, CATEGORIES as RULE_CATEGORIES, coerce_form_value
 
 app = FastAPI()
 
@@ -22,6 +24,7 @@ templates = Jinja2Templates(directory="templates")
 app.include_router(sessions_router)
 app.include_router(table_router)
 app.include_router(maps_router)
+app.include_router(spells_admin_router)
 app.include_router(projector_router)
 
 clients: list[WebSocket] = []
@@ -165,7 +168,113 @@ async def campaign_master_view(campaign_id: int, request: Request, user: User = 
         "sessions": sessions,
         "active_session": active_session,
         "maps": maps,
+        "rules": campaign.rules or {},
+        "rule_definitions": RULE_DEFINITIONS,
+        "rule_categories": RULE_CATEGORIES,
     })
+
+
+@app.get("/sessions/{session_id}/play", response_class=HTMLResponse)
+async def play_view(
+    session_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Phone controller for a player. Auth-required; resolves the user's PC in this session."""
+    from db import LiveCharacter, Map, ActiveEffect
+    gs = db.get(GameSession, session_id)
+    if not gs or not gs.is_active:
+        raise HTTPException(404, "session not found")
+    my_lcs = db.exec(
+        select(LiveCharacter).where(
+            LiveCharacter.session_id == session_id,
+            LiveCharacter.owner_id == user.id,
+            LiveCharacter.is_enemy == False,
+        )
+    ).all()
+    if not my_lcs:
+        return templates.TemplateResponse(request, "phone_controller.html", {
+            "user": user, "gs": gs, "lc": None, "active_map": None,
+            "live_characters": [], "spells": [], "active_effects": [],
+        })
+    requested_id = request.query_params.get("character_id")
+    lc = None
+    if requested_id:
+        lc = next((l for l in my_lcs if str(l.id) == requested_id), None)
+    if lc is None:
+        lc = my_lcs[0]
+    active_map = db.get(Map, gs.active_map_id) if gs.active_map_id else None
+    live_characters = db.exec(
+        select(LiveCharacter).where(LiveCharacter.session_id == session_id)
+    ).all()
+    active_effects = db.exec(
+        select(ActiveEffect).where(
+            ActiveEffect.session_id == session_id,
+            ActiveEffect.target_live_id == lc.id,
+        )
+    ).all()
+    from game.spells import list_all_spells
+    from sessions import _spellcasting_modifiers, _basic_attack_profile, _proficiency_bonus, _movement_budget_ft
+    spell_list = list_all_spells(db, gs.campaign_id)
+    src_char = db.get(Character, lc.source_character_id) if lc.source_character_id else None
+    save_dc, atk_mod, scm = _spellcasting_modifiers(lc, src_char)
+    basic_to_hit, basic_damage_dice, basic_damage_type = _basic_attack_profile(lc)
+    budget_ft = _movement_budget_ft(db, gs, lc)
+    return templates.TemplateResponse(request, "phone_controller.html", {
+        "user": user, "gs": gs, "lc": lc, "char": src_char, "active_map": active_map,
+        "live_characters": live_characters, "my_lcs": my_lcs,
+        "spells": sorted(spell_list, key=lambda s: (s.get("level", 0), s.get("name", ""))),
+        "active_effects": active_effects,
+        "spell_save_dc": save_dc,
+        "spell_attack_mod": atk_mod,
+        "spellcasting_mod": scm,
+        "basic_to_hit": basic_to_hit,
+        "basic_damage_dice": basic_damage_dice,
+        "basic_damage_type": basic_damage_type,
+        "movement_budget_ft": budget_ft,
+        "prof_bonus": _proficiency_bonus(lc.level or 1),
+    })
+
+
+@app.get("/admin/table-overview", response_class=HTMLResponse)
+async def admin_table_overview(
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    pushed = db.exec(
+        select(GameSession).where(
+            GameSession.pushed_to_table == True,
+            GameSession.is_active == True,
+        )
+    ).first()
+    return templates.TemplateResponse(request, "admin_table_overview.html", {
+        "user": user,
+        "active_session": pushed,
+    })
+
+
+@app.post("/campaigns/{campaign_id}/rules")
+async def update_campaign_rules(
+    campaign_id: int,
+    request: Request,
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    campaign = db.get(Campaign, campaign_id)
+    if not campaign:
+        raise HTTPException(404)
+    if campaign.dm_id != user.id:
+        raise HTTPException(403, "DM only")
+    form = await request.form()
+    rules = dict(campaign.rules or {})
+    for key in RULE_DEFINITIONS:
+        rules[key] = coerce_form_value(key, form.get(f"rule_{key}"))
+    campaign.rules = rules
+    db.add(campaign)
+    db.commit()
+    return RedirectResponse(f"/campaigns/{campaign_id}/master", status_code=303)
 
 
 @app.get("/campaigns", response_class=HTMLResponse)
