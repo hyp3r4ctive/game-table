@@ -25,10 +25,14 @@ in design, CAD in progress, website core game engine pre-alpha
 - `docs/` - planning, dimensions, decisions, build log
 - `cad/` - SolidWorks parts and assemblies
 - `code/` - Pi, Arduino, tablet, player screen, server software
-  - 'server/' - server
-    - 'data/' - json databases
-    - 'game/' - python game logic
-    - 'static/'
-    - 'templates/' - html pages
+  - `server/` - server
+    - `data/` - json databases
+    - `game/` - python game logic
+    - `static/`
+    - `templates/` - html pages
 - `electronics/` - schematics and wiring
 - `reference/` - datasheets and manuals
+
+## CAD Model (8/8/26)
+
+<img width="2333" height="1242" alt="DNDTable" src="https://github.com/user-attachments/assets/6cee0a0b-7de4-4795-ad9d-b51bc6a15cd5" />
