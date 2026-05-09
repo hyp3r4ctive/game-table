@@ -1645,6 +1645,7 @@ async def set_surprised(
 @router.post("/sessions/{session_id}/combat/end")
 def end_combat(
     session_id: int,
+    grant_xp: bool = Form(True),
     user: User = Depends(get_current_user),
     db: Session = Depends(get_session),
 ):
@@ -1654,7 +1655,40 @@ def end_combat(
     gs.initiative_order = []
     gs.current_turn_index = 0
     gs.round_number = 0
-    _log(db, gs, "Combat ended")
+    # Auto-grant XP from defeated enemies to active PCs (writes to source Character).
+    if grant_xp:
+        from game.monsters import cr_to_xp
+        defeated = db.exec(
+            select(LiveCharacter).where(
+                LiveCharacter.session_id == session_id,
+                LiveCharacter.is_enemy == True,
+                LiveCharacter.is_active == True,
+            )
+        ).all()
+        defeated = [lc for lc in defeated if (lc.current_hp or 0) <= 0 or lc.is_dead]
+        total_xp = sum(cr_to_xp(lc.challenge_rating or "") for lc in defeated)
+        pcs = db.exec(
+            select(LiveCharacter).where(
+                LiveCharacter.session_id == session_id,
+                LiveCharacter.is_active == True,
+                LiveCharacter.is_enemy == False,
+            )
+        ).all()
+        living_pcs = [lc for lc in pcs if not lc.is_dead]
+        if total_xp > 0 and living_pcs:
+            per_pc = total_xp // len(living_pcs)
+            _log(db, gs, f"Combat ended — defeated {len(defeated)} enemies for {total_xp} XP ({per_pc} per PC)")
+            for lc in living_pcs:
+                if lc.source_character_id:
+                    char = db.get(Character, lc.source_character_id)
+                    if char:
+                        char.experience_points = (char.experience_points or 0) + per_pc
+                        db.add(char)
+                        _log(db, gs, f"  {lc.name}: +{per_pc} XP (now {char.experience_points})")
+        else:
+            _log(db, gs, "Combat ended (no XP — no defeated enemies or no living PCs)")
+    else:
+        _log(db, gs, "Combat ended")
     db.commit()
     events.publish(session_id)
     return RedirectResponse(f"/sessions/{session_id}", status_code=303)
@@ -2463,6 +2497,86 @@ def second_wind(
     if flags:
         _log(db, gs, f"  warning: {flags[0]}")
     _log(db, gs, f"{lc.name} uses Second Wind: heals {healed} (1d10={rolled.total} + level {lc.level or 1}). HP {lc.current_hp}/{lc.max_hp}")
+    db.commit()
+    events.publish(session_id)
+    return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+
+
+@router.post("/sessions/{session_id}/channel-divinity")
+def channel_divinity(
+    session_id: int,
+    actor_id: int = Form(),
+    kind: str = Form("turn_undead"),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Cleric/Paladin Channel Divinity: consume one use; DM resolves the
+    chosen option (Turn Undead, Sacred Weapon, Preserve Life, etc.)."""
+    gs = _require_session(db, session_id, user)
+    lc = _require_live(db, session_id, actor_id)
+    if not _can_act(gs, lc, user):
+        raise HTTPException(403)
+    res = dict(lc.resources or {})
+    entry = dict(res.get("channel_divinity") or {"current": 1, "max": 1, "label": "Channel Divinity", "recharge": "short_rest"})
+    if entry.get("current", 0) <= 0:
+        raise HTTPException(400, "no Channel Divinity uses remaining")
+    entry["current"] -= 1
+    res["channel_divinity"] = entry
+    lc.resources = res
+    db.add(lc)
+    flags = _consume_turn_resource(db, gs, lc, "action")
+    if flags:
+        _log(db, gs, f"  warning: {flags[0]}")
+    _log(db, gs, f"{lc.name} uses Channel Divinity: {kind} ({entry['current']}/{entry['max']} remaining) — DM resolves")
+    db.commit()
+    events.publish(session_id)
+    return RedirectResponse(f"/sessions/{session_id}", status_code=303)
+
+
+@router.post("/sessions/{session_id}/ki")
+def ki_action(
+    session_id: int,
+    actor_id: int = Form(),
+    action: str = Form(),
+    user: User = Depends(get_current_user),
+    db: Session = Depends(get_session),
+):
+    """Monk ki spending: flurry (2 unarmed strikes BA), patient (Dodge as BA),
+    step (Dash + Disengage as BA). Consumes 1 ki point."""
+    gs = _require_session(db, session_id, user)
+    lc = _require_live(db, session_id, actor_id)
+    if not _can_act(gs, lc, user):
+        raise HTTPException(403)
+    res = dict(lc.resources or {})
+    entry = dict(res.get("ki") or {"current": 0, "max": 0, "label": "Ki", "recharge": "short_rest"})
+    if entry.get("current", 0) <= 0:
+        raise HTTPException(400, "no ki points remaining")
+    entry["current"] -= 1
+    res["ki"] = entry
+    lc.resources = res
+    db.add(lc)
+    flags = _consume_turn_resource(db, gs, lc, "bonus_action")
+    if flags:
+        raise HTTPException(400, flags[0])
+    if action == "flurry":
+        # Flurry of Blows: 2 unarmed strikes as bonus action. We increment the
+        # attacks counter by 2 so subsequent /attack calls (with off_hand=true)
+        # consume them without re-charging the action. DM/player flags off_hand.
+        lc.attacks_remaining_this_action = (lc.attacks_remaining_this_action or 0) + 2
+        db.add(lc)
+        _log(db, gs, f"{lc.name} Flurry of Blows: +2 unarmed strikes available this turn")
+    elif action == "patient":
+        gs.is_dodging = True
+        db.add(gs)
+        _log(db, gs, f"{lc.name} Patient Defense: Dodge as bonus action")
+    elif action == "step":
+        gs.is_disengaging = True
+        gs.movement_extra_ft = (gs.movement_extra_ft or 0) + (lc.speed_ft or 30)
+        db.add(gs)
+        _log(db, gs, f"{lc.name} Step of the Wind: Dash + Disengage as bonus action")
+    else:
+        raise HTTPException(400, "action must be flurry/patient/step")
+    _log(db, gs, f"  ki: {entry['current']}/{entry['max']} remaining")
     db.commit()
     events.publish(session_id)
     return RedirectResponse(f"/sessions/{session_id}", status_code=303)

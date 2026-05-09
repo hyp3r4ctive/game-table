@@ -545,6 +545,26 @@
           <button type="submit" class="small">Second Wind</button>
         </form>
         {% endif %}
+        {% if 'channel_divinity' in (lc.class_features or []) %}
+        <form method="post" action="/sessions/{{ gs.id }}/channel-divinity" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <label>channel divinity</label>
+          <input type="text" name="kind" placeholder="turn undead, sacred weapon, ..." value="turn_undead" style="width:170px">
+          <button type="submit" class="small">use</button>
+        </form>
+        {% endif %}
+        {% if 'ki' in (lc.class_features or []) %}
+        <form method="post" action="/sessions/{{ gs.id }}/ki" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <label>ki</label>
+          <select name="action">
+            <option value="flurry">Flurry of Blows</option>
+            <option value="patient">Patient Defense</option>
+            <option value="step">Step of the Wind</option>
+          </select>
+          <button type="submit" class="small">spend (BA)</button>
+        </form>
+        {% endif %}
         {% if 'rage' in (lc.class_features or []) %}
         <form method="post" action="/sessions/{{ gs.id }}/rage" class="inline-form">
           <input type="hidden" name="actor_id" value="{{ lc.id }}">
