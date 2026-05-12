@@ -1,0 +1,172 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  .master-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 14px; }
+  .char-card { background: var(--bg-elevated); border: 1px solid var(--border); border-radius: 8px; padding: 12px; margin-bottom: 8px; }
+  .char-card .name { font-weight: 600; color: var(--text); }
+  .char-card.inactive { opacity: 0.5; }
+  .session-row { display: grid; grid-template-columns: 1fr auto; gap: 12px; padding: 8px; border-bottom: 1px solid var(--border); align-items: center; }
+  .session-row:last-child { border-bottom: none; }
+  .map-thumb { width: 100%; height: 90px; object-fit: cover; border-radius: 4px; background: var(--bg-input); }
+  .map-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); gap: 10px; }
+  .hp-bar { background: #0f1316; height: 8px; border-radius: 4px; overflow: hidden; border: 1px solid var(--border); margin-top: 4px; }
+  .hp-fill { background: var(--teal); height: 100%; }
+  .hp-fill.low { background: var(--danger); }
+</style>
+
+<h1>{{ campaign.name }} <span class="pill teal">master view</span></h1>
+<p class="meta">
+  <a href="/campaigns/{{ campaign.id }}">player view</a> ·
+  <a href="/campaigns/{{ campaign.id }}/maps">maps</a> ·
+  <a href="/campaigns/{{ campaign.id }}/spells">custom spells</a> ·
+  <a href="/campaigns/{{ campaign.id }}/requests">join requests</a> ·
+  <a href="/admin/table-overview" target="_blank">table overview</a>
+  {% if active_session %} · <a href="/sessions/{{ active_session.id }}"><span class="pill warn">live session →</span></a>{% endif %}
+</p>
+
+{% if campaign.description %}
+<p>{{ campaign.description }}</p>
+{% endif %}
+
+<div class="master-grid">
+<div>
+
+<div class="panel">
+  <h2>Members &amp; Characters</h2>
+  {% set chars_by_owner = {} %}
+  {% for entry in characters %}
+    {% set _ = chars_by_owner.setdefault(entry.owner.id, []).append(entry) %}
+  {% endfor %}
+  {% for member in members %}
+    {% set u = member_users.get(member.user_id) %}
+    <h3>{{ u.username }} <span class="meta">({{ member.role }})</span></h3>
+    {% if chars_by_owner.get(u.id) %}
+      {% for entry in chars_by_owner[u.id] %}
+        {% set ch = entry.character %}
+        {% set hp_pct = (ch.current_hp / ch.max_hp * 100) if ch.max_hp else 0 %}
+        <div class="char-card {% if not entry.is_active %}inactive{% endif %}">
+          <div class="row" style="justify-content: space-between">
+            <div>
+              <a href="/characters/{{ ch.id }}" class="name">{{ ch.name }}</a>
+              <span class="meta">{{ ch.race }}{% if ch.subrace %} ({{ ch.subrace }}){% endif %} · {{ ch.character_class or "—" }} L{{ ch.level }}</span>
+            </div>
+            <span class="meta">HP {{ ch.current_hp }}/{{ ch.max_hp }} · AC {{ ch.armor_class }}</span>
+          </div>
+          <div class="hp-bar"><div class="hp-fill {% if hp_pct < 30 %}low{% endif %}" style="width: {{ hp_pct }}%"></div></div>
+          {% if ch.darkvision_ft %}
+            <div class="meta" style="margin-top: 4px">darkvision {{ ch.darkvision_ft }}ft{% if ch.light_emission_ft %} · light source {{ ch.light_emission_ft }}ft{% endif %}</div>
+          {% endif %}
+        </div>
+      {% endfor %}
+    {% else %}
+      <p class="meta">no character assigned.</p>
+    {% endif %}
+  {% endfor %}
+</div>
+
+<div class="panel">
+  <h2>Sessions</h2>
+  {% if sessions %}
+    {% for s in sessions %}
+      <div class="session-row">
+        <div>
+          {{ s.started_at.strftime('%Y-%m-%d %H:%M') if s.started_at else '?' }}
+          {% if s.is_active %}<span class="pill teal">active</span>{% endif %}
+          {% if s.pushed_to_table %}<span class="pill warn">on table</span>{% endif %}
+          {% if s.in_combat %}<span class="pill danger">combat round {{ s.round_number }}</span>{% endif %}
+        </div>
+        <div>
+          {% if s.is_active %}
+            <a href="/sessions/{{ s.id }}"><button class="small">open</button></a>
+          {% else %}
+            <span class="meta">ended {{ s.ended_at.strftime('%H:%M') if s.ended_at else '' }}</span>
+          {% endif %}
+        </div>
+      </div>
+    {% endfor %}
+  {% else %}
+    <p class="meta">no sessions yet.</p>
+  {% endif %}
+  {% if not active_session %}
+    <form method="post" action="/campaigns/{{ campaign.id }}/sessions/start" style="margin-top: 12px">
+      <button type="submit">start new session</button>
+    </form>
+  {% endif %}
+</div>
+
+</div>
+<div>
+
+<div class="panel">
+  <h2>Maps <a href="/campaigns/{{ campaign.id }}/maps" class="meta" style="font-size: 0.85em">manage →</a></h2>
+  {% if maps %}
+    <div class="map-grid">
+      {% for m in maps %}
+        <div>
+          {% if m.image_path %}
+            <img src="{{ m.image_path }}" class="map-thumb">
+          {% else %}
+            <div class="map-thumb" style="display:flex; align-items:center; justify-content:center; color: var(--text-faint)">grid only</div>
+          {% endif %}
+          <div style="margin-top: 4px">
+            <strong>{{ m.name }}</strong>
+            <div class="meta">{{ m.grid_cols }} × {{ m.grid_rows }}{% if m.walls %} · {{ m.walls|length }} walls{% endif %}{% if m.zones %} · {{ m.zones|length }} zones{% endif %}</div>
+          </div>
+        </div>
+      {% endfor %}
+    </div>
+  {% else %}
+    <p class="meta">no maps yet. <a href="/campaigns/{{ campaign.id }}/maps">create one →</a></p>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h2>Campaign rules</h2>
+  <p class="meta">Enforcement rules with leeway hold violating player actions for DM approval. Combat/movement choices change how the engine resolves the action.</p>
+  <form method="post" action="/campaigns/{{ campaign.id }}/rules">
+    {% for cat in rule_categories %}
+      {% set entries = [] %}
+      {% for k, d in rule_definitions.items() %}{% if d.category == cat %}{% set _ = entries.append((k, d)) %}{% endif %}{% endfor %}
+      {% if entries %}
+        <h3 style="margin-top:14px; font-size:0.85em; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.06em">{{ cat }}</h3>
+        {% for key, defn in entries %}
+          <div style="margin-bottom:10px">
+            {% if defn.type == "bool" %}
+              <label><input type="checkbox" name="rule_{{ key }}" {% if rules.get(key, defn.default) %}checked{% endif %}> {{ defn.label }}</label>
+            {% elif defn.type == "choice" %}
+              <label style="display:flex; flex-direction:column; gap:3px; max-width:480px">
+                <span>{{ defn.label }}</span>
+                <select name="rule_{{ key }}">
+                  {% for val, opt_label in defn.options %}
+                    <option value="{{ val }}" {% if rules.get(key, defn.default) == val %}selected{% endif %}>{{ opt_label }}</option>
+                  {% endfor %}
+                </select>
+              </label>
+            {% endif %}
+            {% if defn.description %}<div class="meta" style="margin-left: {% if defn.type == 'bool' %}22px{% else %}0{% endif %}; font-size: 0.82em; margin-top:2px">{{ defn.description }}</div>{% endif %}
+          </div>
+        {% endfor %}
+      {% endif %}
+    {% endfor %}
+    <h3 style="margin-top:14px; font-size:0.85em; color:var(--text-faint); text-transform:uppercase; letter-spacing:0.06em">house rules</h3>
+    <div style="margin-bottom:10px">
+      <label><input type="checkbox" name="persistent_death_saves" {% if campaign.persistent_death_saves %}checked{% endif %}> Persistent death saves</label>
+      <div class="meta" style="margin-left:22px; font-size:0.82em; margin-top:2px">Death-save failures persist across loss/regain of consciousness; threshold becomes 4. Long rest removes one failure. Makes downed characters meaningfully fragile across an encounter chain.</div>
+    </div>
+    <button type="submit" class="small" style="margin-top:8px">save rules</button>
+  </form>
+</div>
+
+<div class="panel">
+  <h2>Quick stats</h2>
+  <ul>
+    <li>{{ members | length }} members</li>
+    <li>{{ characters | length }} characters in campaign</li>
+    <li>{{ sessions | length }} sessions ({{ sessions | selectattr('is_active') | list | length }} active)</li>
+    <li>{{ maps | length }} maps</li>
+  </ul>
+</div>
+
+</div>
+</div>
+{% endblock %}

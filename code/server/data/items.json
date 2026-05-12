@@ -1,0 +1,121 @@
+{
+  "weapon_plus_1": {
+    "name": "+1 Weapon",
+    "rarity": "uncommon",
+    "category": "weapon",
+    "description": "+1 to attack and damage rolls with this weapon.",
+    "stat_buff": {"to_hit_bonus": 1, "damage_bonus": 1}
+  },
+  "weapon_plus_2": {
+    "name": "+2 Weapon",
+    "rarity": "rare",
+    "category": "weapon",
+    "description": "+2 to attack and damage rolls with this weapon.",
+    "stat_buff": {"to_hit_bonus": 2, "damage_bonus": 2}
+  },
+  "weapon_plus_3": {
+    "name": "+3 Weapon",
+    "rarity": "very rare",
+    "category": "weapon",
+    "description": "+3 to attack and damage rolls with this weapon.",
+    "stat_buff": {"to_hit_bonus": 3, "damage_bonus": 3}
+  },
+  "shield_plus_1": {
+    "name": "+1 Shield",
+    "rarity": "uncommon",
+    "category": "armor",
+    "description": "+1 AC over base shield.",
+    "stat_buff": {"ac_bonus": 1}
+  },
+  "shield_plus_2": {
+    "name": "+2 Shield",
+    "rarity": "rare",
+    "category": "armor",
+    "description": "+2 AC over base shield.",
+    "stat_buff": {"ac_bonus": 2}
+  },
+  "armor_plus_1": {
+    "name": "+1 Armor",
+    "rarity": "rare",
+    "category": "armor",
+    "description": "+1 AC.",
+    "stat_buff": {"ac_bonus": 1}
+  },
+  "armor_plus_2": {
+    "name": "+2 Armor",
+    "rarity": "very rare",
+    "category": "armor",
+    "description": "+2 AC.",
+    "stat_buff": {"ac_bonus": 2}
+  },
+  "armor_plus_3": {
+    "name": "+3 Armor",
+    "rarity": "legendary",
+    "category": "armor",
+    "description": "+3 AC.",
+    "stat_buff": {"ac_bonus": 3}
+  },
+  "ring_of_protection": {
+    "name": "Ring of Protection",
+    "rarity": "rare",
+    "category": "ring",
+    "description": "+1 AC and +1 to all saving throws while worn.",
+    "stat_buff": {"ac_bonus": 1, "save_bonus": 1}
+  },
+  "cloak_of_protection": {
+    "name": "Cloak of Protection",
+    "rarity": "uncommon",
+    "category": "wondrous",
+    "description": "+1 AC and +1 to all saving throws.",
+    "stat_buff": {"ac_bonus": 1, "save_bonus": 1}
+  },
+  "bracers_of_defense": {
+    "name": "Bracers of Defense",
+    "rarity": "rare",
+    "category": "wondrous",
+    "description": "+2 AC. Only effective if you wear no armor and carry no shield.",
+    "stat_buff": {"ac_bonus": 2}
+  },
+  "amulet_of_health": {
+    "name": "Amulet of Health",
+    "rarity": "rare",
+    "category": "wondrous",
+    "description": "Your CON score is 19 while wearing this amulet (no effect if your CON is already 19+). Apply HP changes manually via the LC edit form.",
+    "stat_buff": {}
+  },
+  "boots_of_speed": {
+    "name": "Boots of Speed",
+    "rarity": "rare",
+    "category": "wondrous",
+    "description": "Bonus action: click heels to double your walking speed for up to 10 minutes (uses by clicks). Apply via DM speed edit while active.",
+    "stat_buff": {}
+  },
+  "gauntlets_of_ogre_power": {
+    "name": "Gauntlets of Ogre Power",
+    "rarity": "uncommon",
+    "category": "wondrous",
+    "description": "Your STR is 19 while wearing these (no effect if your STR is already 19+). Adjust manually if needed.",
+    "stat_buff": {}
+  },
+  "periapt_of_wound_closure": {
+    "name": "Periapt of Wound Closure",
+    "rarity": "uncommon",
+    "category": "wondrous",
+    "description": "Hit dice spent regain max value. Stable on first death save success.",
+    "stat_buff": {}
+  },
+  "bag_of_holding": {
+    "name": "Bag of Holding",
+    "rarity": "uncommon",
+    "category": "wondrous",
+    "description": "500 lbs / 64 cubic feet of storage; only weighs 15 lbs. Putting a bag of holding inside another extradimensional space tears them both.",
+    "stat_buff": {}
+  },
+  "potion_of_speed": {
+    "name": "Potion of Speed",
+    "rarity": "very rare",
+    "category": "consumable",
+    "description": "Drink (action). For 1 minute: hasted (double speed, +2 AC, advantage on DEX saves, extra action).",
+    "stat_buff": {"ac_bonus": 2}
+  }
+}

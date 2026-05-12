@@ -1,0 +1,10 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>New Campaign</h1>
+<form method="post" action="/campaigns/new">
+    <label>Name <input type="text" name="name" required></label>
+    <label>Description <textarea name="description"></textarea></label>
+    <label><input type="checkbox" name="is_one_shot" value="true"> One-shot</label>
+    <input type="submit" value="Create">
+</form>
+{% endblock %}

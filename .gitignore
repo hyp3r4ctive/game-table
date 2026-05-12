@@ -30,3 +30,13 @@ dist/
 .vscode/
 .idea/
 *.iml
+
+# Misc
+context.md
+
+# Local database (per-developer state)
+code/server/game.db
+
+# Uploaded battle-map images (runtime data)
+code/server/static/maps/*
+!code/server/static/maps/.gitkeep

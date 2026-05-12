@@ -1,0 +1,66 @@
+{
+  "acolyte": {
+    "name": "Acolyte",
+    "skill_profs": ["Insight", "Religion"],
+    "tool_profs": [],
+    "languages": 2,
+    "equipment": ["holy symbol", "prayer book or prayer wheel", "5 sticks of incense", "vestments", "common clothes", "belt pouch with 15 gp"],
+    "feature": {"name": "Shelter of the Faithful", "description": "You and your companions can receive free healing and care at any temple of your faith."}
+  },
+  "criminal": {
+    "name": "Criminal",
+    "skill_profs": ["Deception", "Stealth"],
+    "tool_profs": ["one type of gaming set", "thieves' tools"],
+    "languages": 0,
+    "equipment": ["crowbar", "dark common clothes including hood", "belt pouch with 15 gp"],
+    "feature": {"name": "Criminal Contact", "description": "You have a reliable contact who acts as a liaison to the criminal underworld."}
+  },
+  "folk_hero": {
+    "name": "Folk Hero",
+    "skill_profs": ["Animal Handling", "Survival"],
+    "tool_profs": ["one type of artisan's tools", "vehicles (land)"],
+    "languages": 0,
+    "equipment": ["set of artisan's tools", "shovel", "iron pot", "common clothes", "belt pouch with 10 gp"],
+    "feature": {"name": "Rustic Hospitality", "description": "Common folk will hide you and provide for your needs in their homes."}
+  },
+  "noble": {
+    "name": "Noble",
+    "skill_profs": ["History", "Persuasion"],
+    "tool_profs": ["one type of gaming set"],
+    "languages": 1,
+    "equipment": ["fine clothes", "signet ring", "scroll of pedigree", "purse with 25 gp"],
+    "feature": {"name": "Position of Privilege", "description": "Welcomed in high society; people will go to great lengths to accommodate you."}
+  },
+  "sage": {
+    "name": "Sage",
+    "skill_profs": ["Arcana", "History"],
+    "tool_profs": [],
+    "languages": 2,
+    "equipment": ["bottle of black ink", "quill", "small knife", "letter from a dead colleague", "common clothes", "belt pouch with 10 gp"],
+    "feature": {"name": "Researcher", "description": "When you don't know information, you can often find where to obtain it (libraries, sages, contacts)."}
+  },
+  "soldier": {
+    "name": "Soldier",
+    "skill_profs": ["Athletics", "Intimidation"],
+    "tool_profs": ["one type of gaming set", "vehicles (land)"],
+    "languages": 0,
+    "equipment": ["insignia of rank", "trophy from a fallen enemy", "set of bone dice or deck of cards", "common clothes", "belt pouch with 10 gp"],
+    "feature": {"name": "Military Rank", "description": "Soldiers loyal to your former organization recognize your authority."}
+  },
+  "outlander": {
+    "name": "Outlander",
+    "skill_profs": ["Athletics", "Survival"],
+    "tool_profs": ["one type of musical instrument"],
+    "languages": 1,
+    "equipment": ["staff", "hunting trap", "trophy from an animal you killed", "traveler's clothes", "belt pouch with 10 gp"],
+    "feature": {"name": "Wanderer", "description": "Excellent memory for maps and geography. You can find food and fresh water for yourself and up to five others."}
+  },
+  "hermit": {
+    "name": "Hermit",
+    "skill_profs": ["Medicine", "Religion"],
+    "tool_profs": ["herbalism kit"],
+    "languages": 1,
+    "equipment": ["scroll case full of notes", "winter blanket", "common clothes", "herbalism kit", "5 gp"],
+    "feature": {"name": "Discovery", "description": "Your seclusion gave you access to a unique and powerful discovery."}
+  }
+}

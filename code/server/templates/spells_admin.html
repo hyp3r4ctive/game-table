@@ -1,0 +1,108 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  .spell-table { width: 100%; border-collapse: collapse; }
+  .spell-table th, .spell-table td { padding: 6px 8px; border-bottom: 1px solid var(--border); text-align: left; vertical-align: top; }
+  .spell-table th { color: var(--text-faint); font-weight: 500; font-size: 0.85em; text-transform: uppercase; letter-spacing: 0.05em; }
+  details.spell-form summary { cursor: pointer; padding: 8px 0; color: var(--teal-bright); }
+  .field-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
+  .field-grid label { display: flex; flex-direction: column; gap: 2px; }
+  .field-grid label span { font-size: 0.8em; color: var(--text-faint); }
+  textarea { font-family: monospace; min-height: 70px; width: 100%; }
+</style>
+
+<h1>{{ campaign.name }} — custom spells</h1>
+<p class="meta"><a href="/campaigns/{{ campaign.id }}/master">back to master view</a> · {{ json_only_count }} 5e spells available globally · {{ custom|length }} custom in this campaign</p>
+
+<div class="panel">
+  <h2>Existing custom spells</h2>
+  {% if custom %}
+    <table class="spell-table">
+      <tr><th>name</th><th>level</th><th>type</th><th>range</th><th>requires sight</th><th>target type</th><th></th></tr>
+      {% for s in custom %}
+      <tr>
+        <td><strong>{{ s.name }}</strong> <span class="meta">({{ s.key }})</span></td>
+        <td>{% if s.level == 0 %}cantrip{% else %}L{{ s.level }}{% endif %}</td>
+        <td>{{ s.effect_type }}</td>
+        <td>{{ s.range_ft }}ft</td>
+        <td>{{ "yes" if s.requires_sight else "no" }}</td>
+        <td>{{ s.target_type }}</td>
+        <td>
+          <form method="post" action="/campaigns/{{ campaign.id }}/spells/{{ s.id }}/delete" onsubmit="return confirm('delete {{ s.name }}?');">
+            <button type="submit" class="small secondary">delete</button>
+          </form>
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  {% else %}
+    <p class="meta">no custom spells yet.</p>
+  {% endif %}
+</div>
+
+<details class="spell-form panel">
+  <summary><strong>+ Add a custom spell</strong></summary>
+  <form method="post" action="/campaigns/{{ campaign.id }}/spells">
+    <div class="field-grid">
+      <label><span>name</span><input type="text" name="name" required></label>
+      <label><span>level (0 = cantrip)</span><input type="number" name="level" value="0" min="0" max="9"></label>
+      <label><span>school</span>
+        <select name="school">
+          <option value="">—</option>
+          <option>abjuration</option><option>conjuration</option><option>divination</option>
+          <option>enchantment</option><option>evocation</option><option>illusion</option>
+          <option>necromancy</option><option>transmutation</option>
+        </select>
+      </label>
+      <label><span>casting time</span>
+        <select name="casting_time">
+          <option>action</option><option>bonus_action</option><option>reaction</option>
+          <option>1 minute</option><option>10 minutes</option><option>1 hour</option>
+        </select>
+      </label>
+      <label><span>range (ft, 0 = self)</span><input type="number" name="range_ft" value="60" min="0"></label>
+      <label><span>duration</span><input type="text" name="duration" value="instantaneous"></label>
+      <label><span>effect type</span>
+        <select name="effect_type">
+          <option>attack</option><option>auto_hit</option><option>save_for_half</option>
+          <option>save_or_condition</option><option>save_or_debuff</option>
+          <option>buff</option><option>healing</option><option>hp_threshold</option><option>manual</option>
+        </select>
+      </label>
+      <label><span>target type</span>
+        <select name="target_type">
+          <option>creature_seen</option><option>self</option><option>area_self</option>
+          <option>point_seen</option><option>touch</option>
+        </select>
+      </label>
+      <label><span>concentration</span>
+        <input type="checkbox" name="concentration">
+      </label>
+      <label><span>requires sight</span>
+        <input type="checkbox" name="requires_sight" checked>
+      </label>
+      <label><span>components</span>
+        <span class="row">
+          <label style="margin:0"><input type="checkbox" name="components_v"> V</label>
+          <label style="margin:0"><input type="checkbox" name="components_s"> S</label>
+          <label style="margin:0"><input type="checkbox" name="components_m"> M</label>
+        </span>
+      </label>
+      <label><span>material component (if M)</span><input type="text" name="material_component"></label>
+    </div>
+    <label style="margin-top:10px"><span>description</span><textarea name="description"></textarea></label>
+
+    <details style="margin-top:10px">
+      <summary>advanced JSON fields (paste from data/spells.json or leave blank)</summary>
+      <p class="meta">these accept the same JSON shape as data/spells.json. blank = none.</p>
+      <label><span>damage (list of {dice, type, scaling?})</span><textarea name="damage_json" placeholder='[{"dice": "8d6", "type": "fire"}]'></textarea></label>
+      <label><span>save (object {ability, on_success})</span><textarea name="save_json" placeholder='{"ability": "dexterity", "on_success": "half_damage"}'></textarea></label>
+      <label><span>area (object {shape, ...})</span><textarea name="area_json" placeholder='{"shape": "sphere", "radius_ft": 20}'></textarea></label>
+      <label><span>healing (object)</span><textarea name="healing_json" placeholder='{"dice": "1d8", "modifier": "spellcasting"}'></textarea></label>
+      <label><span>conditions_applied (list)</span><textarea name="conditions_applied_json" placeholder='[{"name": "frightened", "duration_rounds": 10}]'></textarea></label>
+    </details>
+
+    <button type="submit" style="margin-top:10px">create spell</button>
+  </form>
+</details>
+{% endblock %}

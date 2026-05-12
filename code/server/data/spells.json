@@ -1,0 +1,3215 @@
+{
+  "fire_bolt": {
+    "name": "Fire Bolt",
+    "level": 0,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 120,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "attack",
+    "attack": {
+      "type": "ranged_spell"
+    },
+    "damage": [
+      {
+        "dice": "1d10",
+        "type": "fire",
+        "scaling_levels": {
+          "5": "2d10",
+          "11": "3d10",
+          "17": "4d10"
+        }
+      }
+    ],
+    "description": "Hurl a mote of fire at a creature or object. On a hit, the target takes fire damage.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "magic_missile": {
+    "name": "Magic Missile",
+    "level": 1,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 120,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "auto_hit",
+    "darts": {
+      "base": 3,
+      "per_slot_above": 1
+    },
+    "damage": [
+      {
+        "dice": "1d4+1",
+        "type": "force"
+      }
+    ],
+    "description": "Three glowing darts of magical force, each dealing 1d4+1 force damage. Each dart hits a creature of your choice. Darts strike simultaneously and you can direct them at the same or different creatures.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "shield": {
+    "name": "Shield",
+    "level": 1,
+    "school": "abjuration",
+    "casting_time": "reaction",
+    "range_ft": 0,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "1 round",
+    "concentration": false,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "ac_bonus",
+        "name": "Shield",
+        "description": "+5 AC; immune to magic missile.",
+        "target_scope": "self",
+        "duration_rounds": 1,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": false,
+        "payload": {
+          "ac_bonus": 5
+        }
+      }
+    ],
+    "description": "An invisible barrier of magical force appears and protects you. Until the start of your next turn, you have a +5 bonus to AC, including against the triggering attack, and you take no damage from magic missile.",
+    "requires_sight": false,
+    "target_type": "self"
+  },
+  "cure_wounds": {
+    "name": "Cure Wounds",
+    "level": 1,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "healing",
+    "healing": {
+      "dice": "1d8",
+      "modifier": "spellcasting",
+      "scaling": {
+        "per_slot_above": 1,
+        "extra_dice": "1d8"
+      }
+    },
+    "description": "A creature you touch regains hit points equal to 1d8 + your spellcasting modifier.",
+    "requires_sight": true,
+    "target_type": "touch"
+  },
+  "healing_word": {
+    "name": "Healing Word",
+    "level": 1,
+    "school": "evocation",
+    "casting_time": "bonus_action",
+    "range_ft": 60,
+    "components": [
+      "V"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "healing",
+    "healing": {
+      "dice": "1d4",
+      "modifier": "spellcasting",
+      "scaling": {
+        "per_slot_above": 1,
+        "extra_dice": "1d4"
+      }
+    },
+    "description": "A creature of your choice within range regains hit points equal to 1d4 + your spellcasting modifier.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "bless": {
+    "name": "Bless",
+    "level": 1,
+    "school": "enchantment",
+    "casting_time": "action",
+    "range_ft": 30,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "material_component": "a sprinkling of holy water",
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "buff",
+    "max_targets": 3,
+    "applies_effects": [
+      {
+        "handler_key": "bless",
+        "name": "Bless",
+        "description": "+1d4 to attack rolls and saving throws.",
+        "target_scope": "each_target",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true
+      }
+    ],
+    "description": "Bless up to three creatures of your choice within range. Each target adds 1d4 to attack rolls and saving throws until the spell ends.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "hunters_mark": {
+    "name": "Hunter's Mark",
+    "level": 1,
+    "school": "divination",
+    "casting_time": "bonus_action",
+    "range_ft": 90,
+    "components": [
+      "V"
+    ],
+    "duration": "1 hour",
+    "concentration": true,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "hunters_mark",
+        "name": "Hunter's Mark",
+        "description": "Caster deals +1d6 force damage on hit against this target.",
+        "target_scope": "each_target",
+        "duration_rounds": 600,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true
+      }
+    ],
+    "description": "Choose a creature you can see within range to mark as your quarry. You deal an extra 1d6 damage to the target whenever you hit it with a weapon attack, and have advantage on Wisdom (Perception) and Wisdom (Survival) checks made to find it. If the target drops to 0 HP, you can use a bonus action on a subsequent turn to mark a new creature.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "bane": {
+    "name": "Bane",
+    "level": 1,
+    "school": "enchantment",
+    "casting_time": "action",
+    "range_ft": 30,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "material_component": "a drop of blood",
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "save_or_debuff",
+    "max_targets": 3,
+    "save": {
+      "ability": "CHA",
+      "on_success": "no_effect"
+    },
+    "applies_effects": [
+      {
+        "handler_key": "bane",
+        "name": "Baned",
+        "description": "-1d4 to attack rolls and saving throws.",
+        "target_scope": "each_target",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true
+      }
+    ],
+    "description": "Up to three creatures of your choice make a Charisma save. On a failure, they subtract 1d4 from attack rolls and saving throws.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "sleep": {
+    "name": "Sleep",
+    "level": 1,
+    "school": "enchantment",
+    "casting_time": "action",
+    "range_ft": 90,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "material_component": "a pinch of fine sand, rose petals, or a cricket",
+    "duration": "1 minute",
+    "concentration": false,
+    "effect_type": "hp_threshold",
+    "area": {
+      "shape": "sphere",
+      "radius_ft": 20
+    },
+    "hp_threshold": {
+      "dice": "5d8",
+      "scaling": {
+        "per_slot_above": 1,
+        "extra_dice": "2d8"
+      }
+    },
+    "applies_effects": [
+      {
+        "handler_key": "apply_condition",
+        "name": "Asleep",
+        "description": "Unconscious; wakes if it takes damage or someone uses an action to shake it awake.",
+        "target_scope": "each_target",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": false,
+        "payload": {
+          "condition_name": "unconscious"
+        }
+      }
+    ],
+    "description": "Roll 5d8; the total is how many hit points of creatures this spell can affect. Creatures within 20 feet of a point you choose are affected in ascending order of current hit points (ignoring unconscious creatures).",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "burning_hands": {
+    "name": "Burning Hands",
+    "level": 1,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 0,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "save_for_half",
+    "area": {
+      "shape": "cone",
+      "size_ft": 15
+    },
+    "save": {
+      "ability": "DEX",
+      "on_success": "half_damage"
+    },
+    "damage": [
+      {
+        "dice": "3d6",
+        "type": "fire",
+        "scaling": {
+          "per_slot_above": 1,
+          "extra_dice": "1d6"
+        }
+      }
+    ],
+    "description": "A 15-foot cone of fire. Each creature in the area must make a DEX save, taking 3d6 fire damage on a failure or half on a success.",
+    "requires_sight": false,
+    "target_type": "area_self"
+  },
+  "fireball": {
+    "name": "Fireball",
+    "level": 3,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 150,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "material_component": "a tiny ball of bat guano and sulfur",
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "save_for_half",
+    "area": {
+      "shape": "sphere",
+      "radius_ft": 20
+    },
+    "save": {
+      "ability": "DEX",
+      "on_success": "half_damage"
+    },
+    "damage": [
+      {
+        "dice": "8d6",
+        "type": "fire",
+        "scaling": {
+          "per_slot_above": 1,
+          "extra_dice": "1d6"
+        }
+      }
+    ],
+    "description": "A bright streak flashes from your finger to a point you choose, then blossoms into an explosion of flame. Each creature in a 20-foot-radius sphere makes a DEX save.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "hold_person": {
+    "name": "Hold Person",
+    "level": 2,
+    "school": "enchantment",
+    "casting_time": "action",
+    "range_ft": 60,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "material_component": "a small, straight piece of iron",
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "save_or_condition",
+    "save": {
+      "ability": "WIS",
+      "on_success": "no_effect",
+      "save_at_end_of_turn": true
+    },
+    "valid_targets": "humanoid",
+    "applies_effects": [
+      {
+        "handler_key": "apply_condition",
+        "name": "Hold Person",
+        "description": "Paralyzed.",
+        "target_scope": "each_target",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "save_each_turn": {
+          "ability": "wisdom",
+          "on_success": "end"
+        },
+        "payload": {
+          "condition_name": "paralyzed"
+        }
+      }
+    ],
+    "scaling": {
+      "per_slot_above": 1,
+      "extra_targets": 1
+    },
+    "description": "Choose a humanoid you can see. The target must succeed on a Wisdom saving throw or be paralyzed for the duration. The target can repeat the save at the end of each of its turns.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "hold_monster": {
+    "name": "Hold Monster",
+    "level": 5,
+    "school": "enchantment",
+    "casting_time": "action",
+    "range_ft": 90,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "save_or_condition",
+    "save": {
+      "ability": "WIS",
+      "on_success": "no_effect",
+      "save_at_end_of_turn": true
+    },
+    "valid_targets": "any_non_undead",
+    "applies_effects": [
+      {
+        "handler_key": "apply_condition",
+        "name": "Hold Monster",
+        "description": "Paralyzed.",
+        "target_scope": "each_target",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "save_each_turn": {
+          "ability": "wisdom",
+          "on_success": "end"
+        },
+        "payload": {
+          "condition_name": "paralyzed"
+        }
+      }
+    ],
+    "scaling": {
+      "per_slot_above": 1,
+      "extra_targets": 1
+    },
+    "description": "Choose a creature you can see. The target must succeed on a Wisdom save or be paralyzed for the duration.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "counterspell": {
+    "name": "Counterspell",
+    "level": 3,
+    "school": "abjuration",
+    "casting_time": "reaction",
+    "range_ft": 60,
+    "components": [
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Attempt to interrupt a creature in the process of casting a spell. If the creature is casting a spell of 3rd level or lower, its spell fails and has no effect. If it is casting a higher-level spell, make an ability check using your spellcasting ability. The DC equals 10 + the spell's level.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "haste": {
+    "name": "Haste",
+    "level": 3,
+    "school": "transmutation",
+    "casting_time": "action",
+    "range_ft": 30,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "material_component": "a shaving of licorice root",
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "haste",
+        "name": "Hasted",
+        "description": "+2 AC, advantage on DEX saves, doubled speed, extra action.",
+        "target_scope": "each_target",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "payload": {
+          "speed_multiplier": 2.0,
+          "ac_bonus": 2
+        }
+      }
+    ],
+    "description": "Choose a willing creature. Until the spell ends, the target's speed is doubled, it gains a +2 bonus to AC, has advantage on Dexterity saving throws, and gains an additional action on each of its turns. When the spell ends, the target can't move or take actions until after its next turn.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "spike_growth": {
+    "name": "Spike Growth",
+    "level": 2,
+    "school": "transmutation",
+    "casting_time": "action",
+    "range_ft": 150,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "material_component": "seven sharp thorns",
+    "duration": "10 minutes",
+    "concentration": true,
+    "effect_type": "manual",
+    "area": {
+      "shape": "sphere",
+      "radius_ft": 20
+    },
+    "applies_effects": [
+      {
+        "handler_key": "spike_growth",
+        "name": "Spike Growth",
+        "description": "Difficult terrain; 2d4 piercing damage per 5 ft moved through.",
+        "target_scope": "area",
+        "duration_rounds": 100,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "area": {
+          "shape": "circle",
+          "radius_ft": 20
+        },
+        "payload": {
+          "difficult_terrain": true
+        }
+      }
+    ],
+    "description": "Ground in a 20-foot radius becomes difficult terrain studded with thorns. A creature that moves through the area takes 2d4 piercing damage for every 5 feet it travels. The transformation is camouflaged to look natural; a creature that can't see the area when the spell is cast must succeed on a Wisdom (Perception) check against your spell save DC to recognize the terrain as hazardous before entering it.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "slow": {
+    "name": "Slow",
+    "level": 3,
+    "school": "transmutation",
+    "casting_time": "action",
+    "range_ft": 120,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "save_or_debuff",
+    "area": {
+      "shape": "cube",
+      "size_ft": 40
+    },
+    "max_targets": 6,
+    "save": {
+      "ability": "WIS",
+      "on_success": "no_effect",
+      "save_at_end_of_turn": true
+    },
+    "applies_effects": [
+      {
+        "handler_key": "apply_condition",
+        "name": "Slowed",
+        "description": "Speed halved, -2 AC, -2 DEX saves, no reactions, single action per turn.",
+        "target_scope": "each_target",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "save_each_turn": {
+          "ability": "wisdom",
+          "on_success": "end"
+        },
+        "payload": {
+          "condition_name": "slowed",
+          "speed_multiplier": 0.5,
+          "ac_bonus": -2
+        }
+      }
+    ],
+    "description": "Up to six creatures in a 40-foot cube. Each makes a Wisdom save. On a failure, the target's speed is halved, it takes a -2 penalty to AC and Dexterity saves, and can't use reactions.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "guiding_bolt": {
+    "name": "Guiding Bolt",
+    "level": 1,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 120,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "1 round",
+    "concentration": false,
+    "effect_type": "attack",
+    "attack": {
+      "type": "ranged_spell"
+    },
+    "damage": [
+      {
+        "dice": "4d6",
+        "type": "radiant",
+        "scaling": {
+          "per_slot_above": 1,
+          "extra_dice": "1d6"
+        }
+      }
+    ],
+    "on_hit_conditions": [
+      {
+        "name": "next_attack_against_has_advantage",
+        "duration_rounds": 1
+      }
+    ],
+    "description": "A flash of light streaks toward a creature. On a hit, the target takes 4d6 radiant damage, and the next attack roll against it before the end of your next turn has advantage.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "thunderwave": {
+    "name": "Thunderwave",
+    "level": 1,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 0,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "save_for_half",
+    "area": {
+      "shape": "cube",
+      "size_ft": 15
+    },
+    "save": {
+      "ability": "CON",
+      "on_success": "half_damage"
+    },
+    "damage": [
+      {
+        "dice": "2d8",
+        "type": "thunder",
+        "scaling": {
+          "per_slot_above": 1,
+          "extra_dice": "1d8"
+        }
+      }
+    ],
+    "additional_effect": "On a failed save, target is pushed 10 feet away from you.",
+    "description": "A wave of thunderous force sweeps out from you. Each creature in a 15-foot cube makes a CON save, taking 2d8 thunder damage on a failure (half on a success). On a failure, also pushed 10 feet.",
+    "requires_sight": false,
+    "target_type": "area_self"
+  },
+  "mass_healing_word": {
+    "name": "Mass Healing Word",
+    "level": 3,
+    "school": "evocation",
+    "casting_time": "bonus_action",
+    "range_ft": 60,
+    "components": [
+      "V"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "healing",
+    "max_targets": 6,
+    "healing": {
+      "dice": "1d4",
+      "modifier": "spellcasting",
+      "scaling": {
+        "per_slot_above": 1,
+        "extra_dice": "1d4"
+      }
+    },
+    "description": "Up to six creatures of your choice. Each regains hit points equal to 1d4 + your spellcasting modifier.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "lightning_bolt": {
+    "name": "Lightning Bolt",
+    "level": 3,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 0,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "save_for_half",
+    "area": {
+      "shape": "line",
+      "length_ft": 100,
+      "width_ft": 5
+    },
+    "save": {
+      "ability": "DEX",
+      "on_success": "half_damage"
+    },
+    "damage": [
+      {
+        "dice": "8d6",
+        "type": "lightning",
+        "scaling": {
+          "per_slot_above": 1,
+          "extra_dice": "1d6"
+        }
+      }
+    ],
+    "description": "A stroke of lightning forming a 100-foot line. Each creature in the line makes a DEX save.",
+    "requires_sight": false,
+    "target_type": "area_self"
+  },
+  "eldritch_blast": {
+    "name": "Eldritch Blast",
+    "level": 0,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 120,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "attack",
+    "attack": {
+      "type": "ranged_spell"
+    },
+    "beams": {
+      "base": 1,
+      "scaling_levels": {
+        "5": 2,
+        "11": 3,
+        "17": 4
+      }
+    },
+    "damage": [
+      {
+        "dice": "1d10",
+        "type": "force"
+      }
+    ],
+    "description": "A beam of crackling energy. Make a ranged spell attack against the target. On a hit, the target takes 1d10 force damage. At higher levels, you create more beams that can target the same or different creatures.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "sacred_flame": {
+    "name": "Sacred Flame",
+    "level": 0,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 60,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "save_for_half",
+    "save": {
+      "ability": "DEX",
+      "on_success": "no_effect"
+    },
+    "damage": [
+      {
+        "dice": "1d8",
+        "type": "radiant",
+        "scaling": {
+          "per_slot_above": 0,
+          "scaling_levels": {
+            "5": "2d8",
+            "11": "3d8",
+            "17": "4d8"
+          }
+        }
+      }
+    ],
+    "description": "Flame-like radiance descends on a creature you can see. The target must succeed on a Dexterity saving throw or take 1d8 radiant damage. The target gains no benefit from cover for this saving throw. Damage increases at 5/11/17 levels.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "vicious_mockery": {
+    "name": "Vicious Mockery",
+    "level": 0,
+    "school": "enchantment",
+    "casting_time": "action",
+    "range_ft": 60,
+    "components": [
+      "V"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "save_for_half",
+    "save": {
+      "ability": "WIS",
+      "on_success": "no_effect"
+    },
+    "damage": [
+      {
+        "dice": "1d4",
+        "type": "psychic",
+        "scaling": {
+          "per_slot_above": 0,
+          "scaling_levels": {
+            "5": "2d4",
+            "11": "3d4",
+            "17": "4d4"
+          }
+        }
+      }
+    ],
+    "description": "You unleash a string of insults at a creature you can see within range. If the target can hear you (though it need not understand you), it must succeed on a Wisdom saving throw or take 1d4 psychic damage and have disadvantage on the next attack roll it makes before the end of its next turn.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "toll_the_dead": {
+    "name": "Toll the Dead",
+    "level": 0,
+    "school": "necromancy",
+    "casting_time": "action",
+    "range_ft": 60,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "save_for_half",
+    "save": {
+      "ability": "WIS",
+      "on_success": "no_effect"
+    },
+    "damage": [
+      {
+        "dice": "1d8",
+        "type": "necrotic",
+        "scaling": {
+          "per_slot_above": 0,
+          "scaling_levels": {
+            "5": "2d8",
+            "11": "3d8",
+            "17": "4d8"
+          }
+        }
+      }
+    ],
+    "description": "A doleful bell tolls. The target makes a Wisdom save or takes 1d8 necrotic damage. If the target is missing any HP, it takes 1d12 instead. Damage scales with character level.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "acid_splash": {
+    "name": "Acid Splash",
+    "level": 0,
+    "school": "conjuration",
+    "casting_time": "action",
+    "range_ft": 60,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "save_for_half",
+    "save": {
+      "ability": "DEX",
+      "on_success": "no_effect"
+    },
+    "damage": [
+      {
+        "dice": "1d6",
+        "type": "acid",
+        "scaling": {
+          "per_slot_above": 0,
+          "scaling_levels": {
+            "5": "2d6",
+            "11": "3d6",
+            "17": "4d6"
+          }
+        }
+      }
+    ],
+    "max_targets": 2,
+    "description": "Hurl a bubble of acid. Choose one or two creatures within range and within 5 feet of each other. Each makes a DEX save or takes 1d6 acid damage.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "ray_of_frost": {
+    "name": "Ray of Frost",
+    "level": 0,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 60,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "attack",
+    "damage": [
+      {
+        "dice": "1d8",
+        "type": "cold",
+        "scaling": {
+          "per_slot_above": 0,
+          "scaling_levels": {
+            "5": "2d8",
+            "11": "3d8",
+            "17": "4d8"
+          }
+        }
+      }
+    ],
+    "description": "A frigid beam streaks toward a creature. Make a ranged spell attack. On a hit, the target takes 1d8 cold damage and its speed is reduced by 10 feet until the start of your next turn.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "shocking_grasp": {
+    "name": "Shocking Grasp",
+    "level": 0,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "attack",
+    "damage": [
+      {
+        "dice": "1d8",
+        "type": "lightning",
+        "scaling": {
+          "per_slot_above": 0,
+          "scaling_levels": {
+            "5": "2d8",
+            "11": "3d8",
+            "17": "4d8"
+          }
+        }
+      }
+    ],
+    "description": "Lightning springs from your hand. Make a melee spell attack against a creature you try to touch (advantage if it's wearing armor made of metal). On a hit, the target takes 1d8 lightning damage and can't take reactions until the start of its next turn.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "poison_spray": {
+    "name": "Poison Spray",
+    "level": 0,
+    "school": "conjuration",
+    "casting_time": "action",
+    "range_ft": 10,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "save_for_half",
+    "save": {
+      "ability": "CON",
+      "on_success": "no_effect"
+    },
+    "damage": [
+      {
+        "dice": "1d12",
+        "type": "poison",
+        "scaling": {
+          "per_slot_above": 0,
+          "scaling_levels": {
+            "5": "2d12",
+            "11": "3d12",
+            "17": "4d12"
+          }
+        }
+      }
+    ],
+    "description": "Extend your hand toward a creature within range and project a puff of noxious gas. The target must succeed on a CON save or take 1d12 poison damage.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "chill_touch": {
+    "name": "Chill Touch",
+    "level": 0,
+    "school": "necromancy",
+    "casting_time": "action",
+    "range_ft": 120,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "1 round",
+    "concentration": false,
+    "effect_type": "attack",
+    "damage": [
+      {
+        "dice": "1d8",
+        "type": "necrotic",
+        "scaling": {
+          "per_slot_above": 0,
+          "scaling_levels": {
+            "5": "2d8",
+            "11": "3d8",
+            "17": "4d8"
+          }
+        }
+      }
+    ],
+    "description": "Create a ghostly skeletal hand. Make a ranged spell attack. On a hit, the target takes 1d8 necrotic damage and can't regain hit points until the start of your next turn.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "mind_sliver": {
+    "name": "Mind Sliver",
+    "level": 0,
+    "school": "enchantment",
+    "casting_time": "action",
+    "range_ft": 60,
+    "components": [
+      "V"
+    ],
+    "duration": "1 round",
+    "concentration": false,
+    "effect_type": "save_for_half",
+    "save": {
+      "ability": "INT",
+      "on_success": "no_effect"
+    },
+    "damage": [
+      {
+        "dice": "1d6",
+        "type": "psychic",
+        "scaling": {
+          "per_slot_above": 0,
+          "scaling_levels": {
+            "5": "2d6",
+            "11": "3d6",
+            "17": "4d6"
+          }
+        }
+      }
+    ],
+    "description": "Drive a disorienting spike of psychic energy into the mind of one creature. The target must make an INT save or take 1d6 psychic damage and subtract 1d4 from the next save it makes before the end of your next turn.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "thunderclap": {
+    "name": "Thunderclap",
+    "level": 0,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 0,
+    "components": [
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "save_for_half",
+    "area": {
+      "shape": "sphere",
+      "radius_ft": 5
+    },
+    "save": {
+      "ability": "CON",
+      "on_success": "no_effect"
+    },
+    "damage": [
+      {
+        "dice": "1d6",
+        "type": "thunder",
+        "scaling": {
+          "per_slot_above": 0,
+          "scaling_levels": {
+            "5": "2d6",
+            "11": "3d6",
+            "17": "4d6"
+          }
+        }
+      }
+    ],
+    "description": "Create a burst of thunderous sound. Each creature within 5 feet of you, other than you, must make a CON save or take 1d6 thunder damage. Audible up to 100 ft away.",
+    "requires_sight": false,
+    "target_type": "area_self"
+  },
+  "hex": {
+    "name": "Hex",
+    "level": 1,
+    "school": "enchantment",
+    "casting_time": "bonus_action",
+    "range_ft": 90,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "material_component": "the petrified eye of a newt",
+    "duration": "1 hour",
+    "concentration": true,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "mark_damage",
+        "name": "Hex",
+        "description": "Caster deals +1d6 necrotic on hit against this target.",
+        "target_scope": "each_target",
+        "duration_rounds": 600,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "payload": {
+          "dice": "1d6",
+          "type": "necrotic"
+        }
+      }
+    ],
+    "description": "Place a curse on a creature you can see. Until the spell ends, you deal an extra 1d6 necrotic damage when you hit it with an attack. The target also has disadvantage on ability checks made with a chosen ability. If the target drops to 0 HP, you can move the curse as a bonus action.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "faerie_fire": {
+    "name": "Faerie Fire",
+    "level": 1,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 60,
+    "components": [
+      "V"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "save_or_debuff",
+    "area": {
+      "shape": "cube",
+      "size_ft": 20
+    },
+    "max_targets": 6,
+    "save": {
+      "ability": "DEX",
+      "on_success": "no_effect"
+    },
+    "applies_effects": [
+      {
+        "handler_key": "attacker_advantage",
+        "name": "Outlined (Faerie Fire)",
+        "description": "Outlined in light; attacks against this creature have advantage.",
+        "target_scope": "each_target",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true
+      }
+    ],
+    "description": "Each object in a 20-foot cube and each creature in the area is outlined in blue, green, or violet light (DEX save to negate). Any attack against an affected target has advantage if the attacker can see it.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "inflict_wounds": {
+    "name": "Inflict Wounds",
+    "level": 1,
+    "school": "necromancy",
+    "casting_time": "action",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "attack",
+    "damage": [
+      {
+        "dice": "3d10",
+        "type": "necrotic",
+        "scaling": {
+          "per_slot_above": 1,
+          "extra_dice": "1d10"
+        }
+      }
+    ],
+    "description": "Make a melee spell attack against a creature within reach. On a hit, the target takes 3d10 necrotic damage. Cast at higher levels: +1d10 per slot above 1st.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "color_spray": {
+    "name": "Color Spray",
+    "level": 1,
+    "school": "illusion",
+    "casting_time": "action",
+    "range_ft": 0,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "1 round",
+    "concentration": false,
+    "effect_type": "hp_threshold",
+    "area": {
+      "shape": "cone",
+      "size_ft": 15
+    },
+    "hp_threshold": {
+      "dice": "6d10",
+      "scaling": {
+        "per_slot_above": 1,
+        "extra_dice": "2d10"
+      }
+    },
+    "applies_effects": [
+      {
+        "handler_key": "apply_condition",
+        "name": "Blinded (Color Spray)",
+        "description": "Blinded.",
+        "target_scope": "each_target",
+        "duration_rounds": 1,
+        "duration_basis": "caster_end_of_turn",
+        "payload": {
+          "condition_name": "blinded"
+        }
+      }
+    ],
+    "description": "A dazzling array of flashing, colored light springs from your hand. Roll 6d10; the total is how many HP of creatures the spell can affect. Affected creatures (lowest HP first) are blinded until the end of your next turn.",
+    "requires_sight": true,
+    "target_type": "area_self"
+  },
+  "witch_bolt": {
+    "name": "Witch Bolt",
+    "level": 1,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 30,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "attack",
+    "damage": [
+      {
+        "dice": "1d12",
+        "type": "lightning",
+        "scaling": {
+          "per_slot_above": 1,
+          "extra_dice": "1d12"
+        }
+      }
+    ],
+    "description": "A beam of crackling, blue energy lances out. Make a ranged spell attack. On a hit, the target takes 1d12 lightning damage. On each subsequent turn, you can use your action to deal 1d12 lightning damage automatically while the beam holds.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "ray_of_sickness": {
+    "name": "Ray of Sickness",
+    "level": 1,
+    "school": "necromancy",
+    "casting_time": "action",
+    "range_ft": 60,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "attack",
+    "damage": [
+      {
+        "dice": "2d8",
+        "type": "poison",
+        "scaling": {
+          "per_slot_above": 1,
+          "extra_dice": "1d8"
+        }
+      }
+    ],
+    "applies_effects": [
+      {
+        "handler_key": "apply_condition",
+        "name": "Poisoned (Ray of Sickness)",
+        "description": "Poisoned.",
+        "target_scope": "each_target",
+        "duration_rounds": 1,
+        "duration_basis": "caster_end_of_turn",
+        "payload": {
+          "condition_name": "poisoned"
+        }
+      }
+    ],
+    "description": "A ray of sickening greenish energy lashes out toward a creature. Make a ranged spell attack. On a hit, the target takes 2d8 poison damage and must make a CON save or be poisoned until the end of your next turn. (Note: poisoned condition applies on hit; CON save not enforced inline.)",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "dissonant_whispers": {
+    "name": "Dissonant Whispers",
+    "level": 1,
+    "school": "enchantment",
+    "casting_time": "action",
+    "range_ft": 60,
+    "components": [
+      "V"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "save_for_half",
+    "save": {
+      "ability": "WIS",
+      "on_success": "half_damage"
+    },
+    "damage": [
+      {
+        "dice": "3d6",
+        "type": "psychic",
+        "scaling": {
+          "per_slot_above": 1,
+          "extra_dice": "1d6"
+        }
+      }
+    ],
+    "description": "You whisper a discordant melody. The target must make a WIS save, taking 3d6 psychic damage on a fail or half on success. On a fail, the target also uses its reaction to move as far as it can away from you.",
+    "requires_sight": false,
+    "target_type": "creature_seen"
+  },
+  "scorching_ray": {
+    "name": "Scorching Ray",
+    "level": 2,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 120,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "attack",
+    "damage": [
+      {
+        "dice": "2d6",
+        "type": "fire"
+      }
+    ],
+    "beams": {
+      "base": 3,
+      "scaling_levels": {
+        "3": 4,
+        "4": 5,
+        "5": 6,
+        "6": 7,
+        "7": 8,
+        "8": 9,
+        "9": 10
+      }
+    },
+    "description": "Three rays of fire spring from your hand. Make separate ranged spell attacks for each ray; each hit deals 2d6 fire. +1 ray per slot above 2nd.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "spiritual_weapon": {
+    "name": "Spiritual Weapon",
+    "level": 2,
+    "school": "evocation",
+    "casting_time": "bonus_action",
+    "range_ft": 60,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "1 minute",
+    "concentration": false,
+    "effect_type": "manual",
+    "applies_effects": [
+      {
+        "handler_key": "",
+        "name": "Spiritual Weapon",
+        "description": "A floating spectral weapon. Caster uses bonus action to attack: spell attack, 1d8 + spellcasting force damage. +1d8 per two slots above 2nd.",
+        "target_scope": "self",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn"
+      }
+    ],
+    "description": "Create a floating, spectral weapon that lasts for the duration. As a bonus action, you can move it up to 20 ft and make a melee spell attack against a creature within 5 ft of it. On a hit, the target takes 1d8 + spellcasting force damage. +1d8 for every two slots above 2nd.",
+    "requires_sight": false,
+    "target_type": "self"
+  },
+  "aid": {
+    "name": "Aid",
+    "level": 2,
+    "school": "abjuration",
+    "casting_time": "action",
+    "range_ft": 30,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "8 hours",
+    "concentration": false,
+    "effect_type": "buff",
+    "max_targets": 3,
+    "applies_effects": [
+      {
+        "handler_key": "hp_buff",
+        "name": "Aid",
+        "description": "+5 max & current HP.",
+        "target_scope": "each_target",
+        "duration_rounds": 4800,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": false,
+        "payload": {
+          "amount": 5
+        }
+      }
+    ],
+    "description": "Up to three willing creatures gain 5 max & current HP for the duration. +5 per slot above 2nd.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "shatter": {
+    "name": "Shatter",
+    "level": 2,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 60,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "save_for_half",
+    "area": {
+      "shape": "sphere",
+      "radius_ft": 10
+    },
+    "save": {
+      "ability": "CON",
+      "on_success": "half_damage"
+    },
+    "damage": [
+      {
+        "dice": "3d8",
+        "type": "thunder",
+        "scaling": {
+          "per_slot_above": 2,
+          "extra_dice": "1d8"
+        }
+      }
+    ],
+    "description": "A sudden loud ringing noise erupts from a point of your choice. Each creature in a 10-ft radius makes a CON save, taking 3d8 thunder on a fail or half on success. Inorganic objects take double damage.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "blur": {
+    "name": "Blur",
+    "level": 2,
+    "school": "illusion",
+    "casting_time": "action",
+    "range_ft": 0,
+    "components": [
+      "V"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "attacker_disadvantage",
+        "name": "Blur",
+        "description": "Attacks against this creature have disadvantage.",
+        "target_scope": "self",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true
+      }
+    ],
+    "description": "Your body becomes blurred. Any creature has disadvantage on attack rolls against you. An attacker is immune if it doesn't rely on sight or can see through illusions.",
+    "requires_sight": false,
+    "target_type": "self"
+  },
+  "heat_metal": {
+    "name": "Heat Metal",
+    "level": 2,
+    "school": "transmutation",
+    "casting_time": "action",
+    "range_ft": 60,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "manual",
+    "damage": [
+      {
+        "dice": "2d8",
+        "type": "fire",
+        "scaling": {
+          "per_slot_above": 2,
+          "extra_dice": "1d8"
+        }
+      }
+    ],
+    "description": "Choose a manufactured metal object. Any creature in physical contact takes 2d8 fire damage immediately, and can be targeted with bonus action damage on subsequent turns. CON save on first damage to keep holding it.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "acid_arrow": {
+    "name": "Acid Arrow",
+    "level": 2,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 90,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "attack",
+    "damage": [
+      {
+        "dice": "4d4",
+        "type": "acid",
+        "scaling": {
+          "per_slot_above": 2,
+          "extra_dice": "1d4"
+        }
+      }
+    ],
+    "description": "A shimmering green arrow streaks toward a target. Ranged spell attack. On hit: 4d4 acid + 2d4 acid at end of next turn. On miss: half initial damage, no ongoing.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "calm_emotions": {
+    "name": "Calm Emotions",
+    "level": 2,
+    "school": "enchantment",
+    "casting_time": "action",
+    "range_ft": 60,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "manual",
+    "area": {
+      "shape": "sphere",
+      "radius_ft": 20
+    },
+    "save": {
+      "ability": "CHA",
+      "on_success": "no_effect"
+    },
+    "description": "Each humanoid in a 20-ft sphere makes a CHA save. On fail: choose to suppress charmed/frightened, or render indifferent toward chosen creatures. DM resolution.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "web": {
+    "name": "Web",
+    "level": 2,
+    "school": "conjuration",
+    "casting_time": "action",
+    "range_ft": 60,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "1 hour",
+    "concentration": true,
+    "effect_type": "save_or_condition",
+    "area": {
+      "shape": "cube",
+      "size_ft": 20
+    },
+    "save": {
+      "ability": "DEX",
+      "on_success": "no_effect",
+      "save_at_end_of_turn": true
+    },
+    "applies_effects": [
+      {
+        "handler_key": "apply_condition",
+        "name": "Webbed",
+        "description": "Restrained by webs.",
+        "target_scope": "each_target",
+        "duration_rounds": 600,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "save_each_turn": {
+          "ability": "strength",
+          "on_success": "end"
+        },
+        "payload": {
+          "condition_name": "restrained"
+        }
+      }
+    ],
+    "description": "Sticky webs fill a 20-ft cube. Difficult terrain. Each creature starting its turn there or entering on its turn must make a DEX save (initial) or be restrained. Restrained creature can use its action to STR (Athletics) check vs DC to escape.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "spirit_guardians": {
+    "name": "Spirit Guardians",
+    "level": 3,
+    "school": "conjuration",
+    "casting_time": "action",
+    "range_ft": 0,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "10 minutes",
+    "concentration": true,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "aura_damage",
+        "name": "Spirit Guardians (aura)",
+        "description": "15-ft radius around caster. Hostile creatures entering or starting turn there: WIS save DC = caster's spell save DC, 3d8 radiant on fail, half on success.",
+        "target_scope": "self",
+        "duration_rounds": 100,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "payload": {
+          "radius_ft": 15,
+          "dice": "3d8",
+          "type": "radiant",
+          "save_ability": "wisdom",
+          "hostile_only": true
+        }
+      }
+    ],
+    "description": "Spirits flit around you in a 15-ft radius for the duration. Hostile creatures entering or starting their turn there make a Wisdom save: 3d8 radiant on fail, half on success. (Caster can switch to necrotic if evil-aligned \u2014 DM tracks.)",
+    "requires_sight": false,
+    "target_type": "self"
+  },
+  "hypnotic_pattern": {
+    "name": "Hypnotic Pattern",
+    "level": 3,
+    "school": "illusion",
+    "casting_time": "action",
+    "range_ft": 120,
+    "components": [
+      "S",
+      "M"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "save_or_condition",
+    "area": {
+      "shape": "cube",
+      "size_ft": 30
+    },
+    "save": {
+      "ability": "WIS",
+      "on_success": "no_effect"
+    },
+    "applies_effects": [
+      {
+        "handler_key": "apply_condition",
+        "name": "Hypnotized",
+        "description": "Charmed and incapacitated; speed 0.",
+        "target_scope": "each_target",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "payload": {
+          "condition_name": "charmed"
+        }
+      }
+    ],
+    "description": "A swirling pattern appears in a 30-ft cube. Each creature in the area making a WIS save or being charmed for the duration. While charmed, the creature is incapacitated and has speed 0. Effect ends if creature takes damage or another creature uses an action to shake it free.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "stinking_cloud": {
+    "name": "Stinking Cloud",
+    "level": 3,
+    "school": "conjuration",
+    "casting_time": "action",
+    "range_ft": 90,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "save_or_condition",
+    "area": {
+      "shape": "sphere",
+      "radius_ft": 20
+    },
+    "save": {
+      "ability": "CON",
+      "on_success": "no_effect",
+      "save_at_end_of_turn": true
+    },
+    "applies_effects": [
+      {
+        "handler_key": "apply_condition",
+        "name": "Stinking Cloud",
+        "description": "Poisoned; uses action to retch.",
+        "target_scope": "each_target",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "save_each_turn": {
+          "ability": "constitution",
+          "on_success": "end"
+        },
+        "payload": {
+          "condition_name": "poisoned"
+        }
+      }
+    ],
+    "description": "Yellow nauseating gas in a 20-ft radius sphere. Heavily obscures. Creature wholly inside makes a CON save at start of turn or loses its action retching.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "vampiric_touch": {
+    "name": "Vampiric Touch",
+    "level": 3,
+    "school": "necromancy",
+    "casting_time": "action",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "attack",
+    "damage": [
+      {
+        "dice": "3d6",
+        "type": "necrotic",
+        "scaling": {
+          "per_slot_above": 3,
+          "extra_dice": "1d6"
+        }
+      }
+    ],
+    "description": "Touch attack: 3d6 necrotic, regain HP equal to half damage dealt. As an action on subsequent turns, repeat the attack while concentrating.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "bestow_curse": {
+    "name": "Bestow Curse",
+    "level": 3,
+    "school": "necromancy",
+    "casting_time": "action",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "manual",
+    "save": {
+      "ability": "WIS",
+      "on_success": "no_effect"
+    },
+    "description": "Touch a creature; it makes WIS save or be cursed. Choose: disadvantage on chosen ability checks/saves, attacks have advantage against it, target must use action with WIS save to act, attacks deal +1d8 necrotic. DM resolves chosen effect.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "ice_storm": {
+    "name": "Ice Storm",
+    "level": 4,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 300,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "save_for_half",
+    "area": {
+      "shape": "cylinder",
+      "radius_ft": 20,
+      "height_ft": 40
+    },
+    "save": {
+      "ability": "DEX",
+      "on_success": "half_damage"
+    },
+    "damage": [
+      {
+        "dice": "2d8",
+        "type": "bludgeoning"
+      },
+      {
+        "dice": "4d6",
+        "type": "cold",
+        "scaling": {
+          "per_slot_above": 4,
+          "extra_dice": "1d6"
+        }
+      }
+    ],
+    "description": "A hail of rock-hard ice in a 20-ft radius, 40-ft high cylinder. Each creature makes a DEX save: 2d8 bludgeoning + 4d6 cold on fail, half on success. Ground becomes difficult terrain.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "banishment": {
+    "name": "Banishment",
+    "level": 4,
+    "school": "abjuration",
+    "casting_time": "action",
+    "range_ft": 60,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "save_or_condition",
+    "save": {
+      "ability": "CHA",
+      "on_success": "no_effect"
+    },
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "apply_condition",
+        "name": "Banished",
+        "description": "Removed from play; returns when spell ends.",
+        "target_scope": "each_target",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "payload": {
+          "condition_name": "incapacitated"
+        }
+      }
+    ],
+    "scaling": {
+      "per_slot_above": 4,
+      "extra_targets": 1
+    },
+    "description": "Target a creature you can see. CHA save or be banished to a harmless demiplane. Target is incapacitated until the spell ends. If the target is native to a different plane, banishment is permanent.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "stoneskin": {
+    "name": "Stoneskin",
+    "level": 4,
+    "school": "abjuration",
+    "casting_time": "action",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "1 hour",
+    "concentration": true,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "damage_resistance",
+        "name": "Stoneskin",
+        "description": "Resistance to nonmagical bludgeoning, piercing, slashing.",
+        "target_scope": "each_target",
+        "duration_rounds": 600,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "payload": {
+          "types": [
+            "bludgeoning",
+            "piercing",
+            "slashing"
+          ]
+        }
+      }
+    ],
+    "description": "Target gains resistance to nonmagical bludgeoning, piercing, and slashing damage for the duration.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "greater_invisibility": {
+    "name": "Greater Invisibility",
+    "level": 4,
+    "school": "illusion",
+    "casting_time": "action",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "attacker_disadvantage",
+        "name": "Invisible (attacks vs)",
+        "description": "Attacks against this creature have disadvantage.",
+        "target_scope": "each_target",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true
+      },
+      {
+        "handler_key": "attacker_advantage_on_attacks",
+        "name": "Invisible (own attacks)",
+        "description": "This creature's attack rolls have advantage.",
+        "target_scope": "each_target",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true
+      }
+    ],
+    "description": "Target becomes invisible for the duration. Anything carried/worn is invisible too. Attacks vs target have disadvantage; target's attacks have advantage.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "phantasmal_killer": {
+    "name": "Phantasmal Killer",
+    "level": 4,
+    "school": "illusion",
+    "casting_time": "action",
+    "range_ft": 120,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "save_for_half",
+    "save": {
+      "ability": "WIS",
+      "on_success": "no_effect"
+    },
+    "damage": [
+      {
+        "dice": "4d10",
+        "type": "psychic",
+        "scaling": {
+          "per_slot_above": 4,
+          "extra_dice": "1d10"
+        }
+      }
+    ],
+    "description": "Tap into target's nightmares. WIS save or be frightened. Target makes another WIS save at end of each turn or take 4d10 psychic damage. Successful save ends the spell.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "sickening_radiance": {
+    "name": "Sickening Radiance",
+    "level": 4,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 120,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "10 minutes",
+    "concentration": true,
+    "effect_type": "manual",
+    "area": {
+      "shape": "cube",
+      "size_ft": 30
+    },
+    "applies_effects": [
+      {
+        "handler_key": "aura_damage",
+        "name": "Sickening Radiance",
+        "description": "Sickly green radiance in a 30-ft cube. Each creature entering or starting turn there: CON save, 4d10 radiant on fail.",
+        "target_scope": "self",
+        "duration_rounds": 100,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "payload": {
+          "radius_ft": 15,
+          "dice": "4d10",
+          "type": "radiant",
+          "save_ability": "constitution",
+          "hostile_only": false
+        }
+      }
+    ],
+    "description": "30-ft cube of greenish radiance. Each creature entering or starting turn there makes a CON save or takes 4d10 radiant + a level of exhaustion. The area is heavily obscured. (Spell uses cube area; aura handler approximates with radius around caster's position.)",
+    "requires_sight": true,
+    "target_type": "self"
+  },
+  "cone_of_cold": {
+    "name": "Cone of Cold",
+    "level": 5,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 0,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "save_for_half",
+    "area": {
+      "shape": "cone",
+      "size_ft": 60
+    },
+    "save": {
+      "ability": "CON",
+      "on_success": "half_damage"
+    },
+    "damage": [
+      {
+        "dice": "8d8",
+        "type": "cold",
+        "scaling": {
+          "per_slot_above": 5,
+          "extra_dice": "1d8"
+        }
+      }
+    ],
+    "description": "A 60-ft cone of cold air. Each creature makes a CON save: 8d8 cold on fail, half on success. Creature killed by this becomes a frozen statue.",
+    "requires_sight": false,
+    "target_type": "area_self"
+  },
+  "flame_strike": {
+    "name": "Flame Strike",
+    "level": 5,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 60,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "save_for_half",
+    "area": {
+      "shape": "cylinder",
+      "radius_ft": 10,
+      "height_ft": 40
+    },
+    "save": {
+      "ability": "DEX",
+      "on_success": "half_damage"
+    },
+    "damage": [
+      {
+        "dice": "4d6",
+        "type": "fire",
+        "scaling": {
+          "per_slot_above": 5,
+          "extra_dice": "1d6"
+        }
+      },
+      {
+        "dice": "4d6",
+        "type": "radiant",
+        "scaling": {
+          "per_slot_above": 5,
+          "extra_dice": "1d6"
+        }
+      }
+    ],
+    "description": "A vertical column of divine fire in a 10-ft radius, 40-ft high cylinder. Each creature makes a DEX save: 4d6 fire + 4d6 radiant on fail, half on success.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "insect_plague": {
+    "name": "Insect Plague",
+    "level": 5,
+    "school": "conjuration",
+    "casting_time": "action",
+    "range_ft": 300,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "10 minutes",
+    "concentration": true,
+    "effect_type": "save_for_half",
+    "area": {
+      "shape": "sphere",
+      "radius_ft": 20
+    },
+    "save": {
+      "ability": "CON",
+      "on_success": "half_damage"
+    },
+    "damage": [
+      {
+        "dice": "4d10",
+        "type": "piercing",
+        "scaling": {
+          "per_slot_above": 5,
+          "extra_dice": "1d10"
+        }
+      }
+    ],
+    "description": "A 20-ft radius sphere swarms with biting locusts. Difficult terrain. Each creature in the area or entering makes a CON save: 4d10 piercing on fail, half on success.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "telekinesis": {
+    "name": "Telekinesis",
+    "level": 5,
+    "school": "transmutation",
+    "casting_time": "action",
+    "range_ft": 60,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "10 minutes",
+    "concentration": true,
+    "effect_type": "manual",
+    "save": {
+      "ability": "STR",
+      "on_success": "no_effect"
+    },
+    "description": "You move or manipulate creatures and objects by thought. As an action, exert force: target creature makes contested CHA check; on success move the target up to 30 ft. Manipulate objects up to 1000 lbs. DM resolves.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "mirror_image": {
+    "name": "Mirror Image",
+    "level": 2,
+    "school": "illusion",
+    "casting_time": "action",
+    "range_ft": 0,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "1 minute",
+    "concentration": false,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "mirror_image",
+        "name": "Mirror Image (3)",
+        "description": "Three illusory duplicates. Each attack against caster: d20 deflection check.",
+        "target_scope": "self",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": false,
+        "payload": {
+          "images": 3
+        }
+      }
+    ],
+    "description": "Three illusory duplicates appear in your space and move with you. Each time a creature targets you with an attack, roll a d20: with 3 duplicates, 6+ redirects to an image; 2 = 8+; 1 = 11+. Image AC = 10 + your DEX mod. A hit destroys the image; a miss does nothing.",
+    "requires_sight": false,
+    "target_type": "self"
+  },
+  "hellish_rebuke": {
+    "name": "Hellish Rebuke",
+    "level": 1,
+    "school": "evocation",
+    "casting_time": "reaction",
+    "range_ft": 60,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "manual",
+    "save": {
+      "ability": "DEX",
+      "on_success": "half_damage"
+    },
+    "damage": [
+      {
+        "dice": "2d10",
+        "type": "fire",
+        "scaling": {
+          "per_slot_above": 1,
+          "extra_dice": "1d10"
+        }
+      }
+    ],
+    "description": "When you take damage, point at the creature that damaged you. They make a DEX save: 2d10 fire damage on fail, half on success. +1d10 per slot above 1st. Resolved automatically by the reaction window.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "wall_of_fire": {
+    "name": "Wall of Fire",
+    "level": 4,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 120,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "manual",
+    "area": {
+      "shape": "wall"
+    },
+    "applies_effects": [
+      {
+        "handler_key": "wall_damage",
+        "name": "Wall of Fire",
+        "description": "5d8 fire damage on entering the wall or starting turn within 10 ft of the hot side.",
+        "target_scope": "area",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "area": {
+          "shape": "wall"
+        },
+        "payload": {
+          "dice": "5d8",
+          "type": "fire"
+        }
+      }
+    ],
+    "description": "A wall of flame springs up. Click two cells to set its endpoints. Each creature crossing or starting their turn within 10 ft of the hot side takes 5d8 fire damage. +1d8 per slot above 4th (handle manually).",
+    "requires_sight": true,
+    "target_type": "wall"
+  },
+  "wall_of_thorns": {
+    "name": "Wall of Thorns",
+    "level": 6,
+    "school": "conjuration",
+    "casting_time": "action",
+    "range_ft": 120,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "10 minutes",
+    "concentration": true,
+    "effect_type": "manual",
+    "area": {
+      "shape": "wall"
+    },
+    "applies_effects": [
+      {
+        "handler_key": "wall_damage",
+        "name": "Wall of Thorns",
+        "description": "7d8 piercing damage on entering. Difficult terrain.",
+        "target_scope": "area",
+        "duration_rounds": 100,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "area": {
+          "shape": "wall"
+        },
+        "payload": {
+          "dice": "7d8",
+          "type": "piercing",
+          "difficult_terrain": true
+        }
+      }
+    ],
+    "description": "A wall of tough, pliable, tangled brush bristling with thorns appears. Each creature passing through takes 7d8 piercing. +1d8 per slot above 6th.",
+    "requires_sight": true,
+    "target_type": "wall"
+  },
+  "blade_barrier": {
+    "name": "Blade Barrier",
+    "level": 6,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 90,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "10 minutes",
+    "concentration": true,
+    "effect_type": "manual",
+    "area": {
+      "shape": "wall"
+    },
+    "applies_effects": [
+      {
+        "handler_key": "wall_damage",
+        "name": "Blade Barrier",
+        "description": "6d10 slashing on entry; DEX save halves.",
+        "target_scope": "area",
+        "duration_rounds": 100,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "area": {
+          "shape": "wall"
+        },
+        "payload": {
+          "dice": "6d10",
+          "type": "slashing",
+          "save": {
+            "ability": "dex",
+            "dc": 14
+          }
+        }
+      }
+    ],
+    "description": "Create a vertical wall of whirling, razor-sharp blades. Creatures crossing make a DEX save: 6d10 slashing on fail, half on success. (Save not auto-rolled; reduces damage manually.)",
+    "requires_sight": true,
+    "target_type": "wall"
+  },
+  "wall_of_force": {
+    "name": "Wall of Force",
+    "level": 5,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 120,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "10 minutes",
+    "concentration": true,
+    "effect_type": "manual",
+    "area": {
+      "shape": "wall"
+    },
+    "applies_effects": [
+      {
+        "handler_key": "",
+        "name": "Wall of Force",
+        "description": "Invisible barrier; nothing can physically pass through.",
+        "target_scope": "area",
+        "duration_rounds": 100,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "area": {
+          "shape": "wall"
+        },
+        "payload": {
+          "blocks_movement": true
+        }
+      }
+    ],
+    "description": "An invisible wall of force springs into existence. Nothing physical can pass through. Disintegrate destroys it. Spells and other magical effects can't pass except through teleportation.",
+    "requires_sight": true,
+    "target_type": "wall"
+  },
+  "wall_of_stone": {
+    "name": "Wall of Stone",
+    "level": 5,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 120,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "10 minutes",
+    "concentration": true,
+    "effect_type": "manual",
+    "area": {
+      "shape": "wall"
+    },
+    "applies_effects": [
+      {
+        "handler_key": "",
+        "name": "Wall of Stone",
+        "description": "Solid stone wall, blocks movement.",
+        "target_scope": "area",
+        "duration_rounds": 100,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "area": {
+          "shape": "wall"
+        },
+        "payload": {
+          "blocks_movement": true
+        }
+      }
+    ],
+    "description": "A nonmagical wall of solid stone springs into existence. Stays after concentration ends if you concentrate the full 10 minutes. Can be Damaged like any object.",
+    "requires_sight": true,
+    "target_type": "wall"
+  },
+  "searing_smite": {
+    "name": "Searing Smite",
+    "level": 1,
+    "school": "evocation",
+    "casting_time": "bonus_action",
+    "range_ft": 0,
+    "components": [
+      "V"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "smite_on_hit",
+        "name": "Searing Smite (primed)",
+        "description": "Next melee weapon hit deals +1d6 fire.",
+        "target_scope": "self",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "payload": {
+          "dice": "1d6",
+          "type": "fire"
+        }
+      }
+    ],
+    "description": "Next time you hit with a melee weapon attack during the spell's duration, the target takes an extra 1d6 fire damage and ignites (target makes CON save at end of each turn or takes another 1d6 fire). +1d6 per slot above 1st.",
+    "requires_sight": false,
+    "target_type": "self"
+  },
+  "wrathful_smite": {
+    "name": "Wrathful Smite",
+    "level": 1,
+    "school": "evocation",
+    "casting_time": "bonus_action",
+    "range_ft": 0,
+    "components": [
+      "V"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "smite_on_hit",
+        "name": "Wrathful Smite (primed)",
+        "description": "Next melee weapon hit deals +1d6 psychic; target makes WIS save or be frightened (resolved by DM).",
+        "target_scope": "self",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "payload": {
+          "dice": "1d6",
+          "type": "psychic"
+        }
+      }
+    ],
+    "description": "Next melee weapon hit deals +1d6 psychic. Target must make WIS save or be frightened of you for the duration.",
+    "requires_sight": false,
+    "target_type": "self"
+  },
+  "thunderous_smite": {
+    "name": "Thunderous Smite",
+    "level": 1,
+    "school": "evocation",
+    "casting_time": "bonus_action",
+    "range_ft": 0,
+    "components": [
+      "V"
+    ],
+    "duration": "1 round",
+    "concentration": true,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "smite_on_hit",
+        "name": "Thunderous Smite (primed)",
+        "description": "Next melee weapon hit deals +2d6 thunder; target makes STR save or pushed 10 ft + prone.",
+        "target_scope": "self",
+        "duration_rounds": 1,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "payload": {
+          "dice": "2d6",
+          "type": "thunder"
+        }
+      }
+    ],
+    "description": "Next melee weapon hit thunders out for an extra 2d6 thunder. Target makes STR save or be pushed 10 ft and knocked prone.",
+    "requires_sight": false,
+    "target_type": "self"
+  },
+  "branding_smite": {
+    "name": "Branding Smite",
+    "level": 2,
+    "school": "evocation",
+    "casting_time": "bonus_action",
+    "range_ft": 0,
+    "components": [
+      "V"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "smite_on_hit",
+        "name": "Branding Smite (primed)",
+        "description": "Next melee weapon hit deals +2d6 radiant; target sheds dim light, can't be invisible.",
+        "target_scope": "self",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "payload": {
+          "dice": "2d6",
+          "type": "radiant"
+        }
+      }
+    ],
+    "description": "Next melee weapon hit deals +2d6 radiant. Target glows visibly; can't benefit from invisibility while branded. +1d6 per slot above 2nd.",
+    "requires_sight": false,
+    "target_type": "self"
+  },
+  "banishing_smite": {
+    "name": "Banishing Smite",
+    "level": 5,
+    "school": "abjuration",
+    "casting_time": "bonus_action",
+    "range_ft": 0,
+    "components": [
+      "V"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "smite_on_hit",
+        "name": "Banishing Smite (primed)",
+        "description": "Next melee weapon hit deals +5d10 force; if target \u226450 HP, banished (DM resolves).",
+        "target_scope": "self",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "payload": {
+          "dice": "5d10",
+          "type": "force"
+        }
+      }
+    ],
+    "description": "Next melee weapon hit deals +5d10 force. If target is reduced to \u226450 HP after the hit, it's banished to a harmless demiplane until the spell ends.",
+    "requires_sight": false,
+    "target_type": "self"
+  },
+  "death_ward": {
+    "name": "Death Ward",
+    "level": 4,
+    "school": "abjuration",
+    "casting_time": "action",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "8 hours",
+    "concentration": false,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "death_ward",
+        "name": "Death Ward",
+        "description": "First fatal hit reduces caster to 1 HP instead of 0; effect consumed.",
+        "target_scope": "each_target",
+        "duration_rounds": 4800,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": false
+      }
+    ],
+    "description": "Target is warded against death. The first time the target would drop to 0 HP, it drops to 1 HP instead and the spell ends.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "cloud_of_daggers": {
+    "name": "Cloud of Daggers",
+    "level": 2,
+    "school": "conjuration",
+    "casting_time": "action",
+    "range_ft": 60,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "manual",
+    "area": {
+      "shape": "cube",
+      "size_ft": 5
+    },
+    "applies_effects": [
+      {
+        "handler_key": "aura_damage",
+        "name": "Cloud of Daggers",
+        "description": "5-ft cube of spinning daggers. Any creature entering or starting turn there takes 4d4 slashing (no save). +2d4 per slot above 2nd.",
+        "target_scope": "self",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "payload": {
+          "radius_ft": 5,
+          "dice": "4d4",
+          "type": "slashing",
+          "hostile_only": false
+        }
+      }
+    ],
+    "description": "Fill a 5-ft cube with spinning daggers. Any creature in the area when cast or that enters takes 4d4 slashing. +2d4 per slot above 2nd. Note: aura handler tracks caster position; place the caster at the cube center.",
+    "requires_sight": true,
+    "target_type": "self"
+  },
+  "true_strike": {
+    "name": "True Strike",
+    "level": 0,
+    "school": "divination",
+    "casting_time": "action",
+    "range_ft": 30,
+    "components": [
+      "S"
+    ],
+    "duration": "1 round",
+    "concentration": true,
+    "effect_type": "manual",
+    "description": "Point at a target. If you attack the target on your next turn before this spell ends, your attack roll has advantage. Concentration; takes a full action to set up.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "guidance": {
+    "name": "Guidance",
+    "level": 0,
+    "school": "divination",
+    "casting_time": "action",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "manual",
+    "description": "Touch a willing creature. Once before the spell ends, the target can roll a d4 and add it to one ability check of its choice. DM/player applies the d4 manually when rolling the check.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "resistance": {
+    "name": "Resistance",
+    "level": 0,
+    "school": "abjuration",
+    "casting_time": "action",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "manual",
+    "description": "Touch a willing creature. Once before the spell ends, the target can roll a d4 and add it to one saving throw of its choice. Apply manually.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "shillelagh": {
+    "name": "Shillelagh",
+    "level": 0,
+    "school": "transmutation",
+    "casting_time": "bonus_action",
+    "range_ft": 0,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "1 minute",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Imbue a club or quarterstaff. For the duration, weapon damage becomes 1d8 + your spellcasting modifier and attacks use your spellcasting ability for the attack roll.",
+    "requires_sight": false,
+    "target_type": "self"
+  },
+  "mage_hand": {
+    "name": "Mage Hand",
+    "level": 0,
+    "school": "conjuration",
+    "casting_time": "action",
+    "range_ft": 30,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "1 minute",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "A spectral hand appears at a point you choose. As an action, you can move the hand 30 ft and manipulate objects, open unlocked doors, stow items, etc. Cannot attack or weigh more than 10 lbs.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "light": {
+    "name": "Light",
+    "level": 0,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "M"
+    ],
+    "duration": "1 hour",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Touch one object no larger than 10 ft. The object sheds bright light in a 20-ft radius and dim light for an additional 20 ft.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "dancing_lights": {
+    "name": "Dancing Lights",
+    "level": 0,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 120,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "manual",
+    "description": "Create up to four torch-like lights within range. Move them as a bonus action.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "minor_illusion": {
+    "name": "Minor Illusion",
+    "level": 0,
+    "school": "illusion",
+    "casting_time": "action",
+    "range_ft": 30,
+    "components": [
+      "S",
+      "M"
+    ],
+    "duration": "1 minute",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Create a sound or image of an object within range. Investigation check vs spell save DC discerns the illusion.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "mending": {
+    "name": "Mending",
+    "level": 0,
+    "school": "transmutation",
+    "casting_time": "1 minute",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Repair a single break or tear in an object you touch.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "message": {
+    "name": "Message",
+    "level": 0,
+    "school": "transmutation",
+    "casting_time": "action",
+    "range_ft": 120,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "1 round",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Whisper a message to a creature within range that only it hears; it can whisper back.",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "prestidigitation": {
+    "name": "Prestidigitation",
+    "level": 0,
+    "school": "transmutation",
+    "casting_time": "action",
+    "range_ft": 10,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "up to 1 hour",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "A minor magical trick: clean/soil an object, light/snuff a candle, change flavor, create a sensory effect, etc.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "druidcraft": {
+    "name": "Druidcraft",
+    "level": 0,
+    "school": "transmutation",
+    "casting_time": "action",
+    "range_ft": 30,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Predict weather, cause a flower to bloom, light/snuff fire, or create a sensory effect.",
+    "requires_sight": false,
+    "target_type": "point_seen"
+  },
+  "misty_step": {
+    "name": "Misty Step",
+    "level": 2,
+    "school": "conjuration",
+    "casting_time": "bonus_action",
+    "range_ft": 0,
+    "components": [
+      "V"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Briefly surrounded by silvery mist, you teleport up to 30 ft to an unoccupied space you can see.",
+    "requires_sight": true,
+    "target_type": "self"
+  },
+  "fly": {
+    "name": "Fly",
+    "level": 3,
+    "school": "transmutation",
+    "casting_time": "action",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "10 minutes",
+    "concentration": true,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "",
+        "name": "Fly",
+        "description": "60 ft fly speed.",
+        "target_scope": "each_target",
+        "duration_rounds": 100,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true
+      }
+    ],
+    "description": "Touch a willing creature. Target gains a 60-ft fly speed for the duration.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "dimension_door": {
+    "name": "Dimension Door",
+    "level": 4,
+    "school": "conjuration",
+    "casting_time": "action",
+    "range_ft": 500,
+    "components": [
+      "V"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Teleport yourself (and one willing Medium-or-smaller creature touching you) up to 500 ft to a location you can describe.",
+    "requires_sight": false,
+    "target_type": "self"
+  },
+  "teleport": {
+    "name": "Teleport",
+    "level": 7,
+    "school": "conjuration",
+    "casting_time": "action",
+    "range_ft": 10,
+    "components": [
+      "V"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Teleport yourself and up to eight willing creatures to a destination you choose. Roll d100 vs familiarity table for accuracy.",
+    "requires_sight": false,
+    "target_type": "self"
+  },
+  "plane_shift": {
+    "name": "Plane Shift",
+    "level": 7,
+    "school": "conjuration",
+    "casting_time": "action",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Transport up to eight willing creatures (joined hands) to a different plane of existence. Or, used as an attack: a single creature must make CHA save or be banished to another plane.",
+    "requires_sight": false,
+    "target_type": "creature_seen"
+  },
+  "heal": {
+    "name": "Heal",
+    "level": 6,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 60,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "healing",
+    "healing": {
+      "dice": "0d0+70",
+      "modifier": "",
+      "scaling": {
+        "per_slot_above": 6,
+        "extra_dice": "10"
+      }
+    },
+    "description": "Choose a creature within range. Heal 70 HP and end blinded, deafened, and any disease. +10 HP per slot above 6th. (Heal table simplified \u2014 adjust manually.)",
+    "requires_sight": true,
+    "target_type": "creature_seen"
+  },
+  "mass_cure_wounds": {
+    "name": "Mass Cure Wounds",
+    "level": 5,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 60,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "healing",
+    "max_targets": 6,
+    "area": {
+      "shape": "sphere",
+      "radius_ft": 30
+    },
+    "healing": {
+      "dice": "3d8",
+      "modifier": "spellcasting",
+      "scaling": {
+        "per_slot_above": 5,
+        "extra_dice": "1d8"
+      }
+    },
+    "description": "Up to six creatures within a 30-ft radius regain HP equal to 3d8 + your spellcasting modifier.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "greater_restoration": {
+    "name": "Greater Restoration",
+    "level": 5,
+    "school": "abjuration",
+    "casting_time": "action",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Touch a creature. End ONE of: charmed/petrified, a curse (incl. attunement to a cursed item), reduction to ability score, reduction to HP max, or one level of exhaustion.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "raise_dead": {
+    "name": "Raise Dead",
+    "level": 5,
+    "school": "necromancy",
+    "casting_time": "1 hour",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Return a creature dead for \u226410 days to life with 1 HP. They suffer -4 to all rolls for 4 long rests. Costs 500gp diamond.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "resurrection": {
+    "name": "Resurrection",
+    "level": 7,
+    "school": "necromancy",
+    "casting_time": "1 hour",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Return a creature dead for \u2264100 years to life with full HP. Costs 1000gp diamond.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "magic_weapon": {
+    "name": "Magic Weapon",
+    "level": 2,
+    "school": "transmutation",
+    "casting_time": "bonus_action",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "1 hour",
+    "concentration": true,
+    "effect_type": "buff",
+    "max_targets": 1,
+    "applies_effects": [
+      {
+        "handler_key": "",
+        "name": "Magic Weapon (+1)",
+        "description": "+1 to attack and damage rolls with the touched weapon.",
+        "target_scope": "each_target",
+        "duration_rounds": 600,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true
+      }
+    ],
+    "description": "Touch a nonmagical weapon. For the duration it becomes a +1 magic weapon. At 4th level slot it becomes +2; at 6th, +3.",
+    "requires_sight": false,
+    "target_type": "touch"
+  },
+  "moonbeam": {
+    "name": "Moonbeam",
+    "level": 2,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 120,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "1 minute",
+    "concentration": true,
+    "effect_type": "manual",
+    "area": {
+      "shape": "cylinder",
+      "radius_ft": 5,
+      "height_ft": 40
+    },
+    "applies_effects": [
+      {
+        "handler_key": "aura_damage",
+        "name": "Moonbeam",
+        "description": "5-ft radius beam. Each creature entering or starting turn there: CON save, 2d10 radiant on fail (+1d10 per slot above 2nd).",
+        "target_scope": "self",
+        "duration_rounds": 10,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "payload": {
+          "radius_ft": 5,
+          "dice": "2d10",
+          "type": "radiant",
+          "save_ability": "constitution",
+          "hostile_only": false
+        }
+      }
+    ],
+    "description": "A silvery beam of moonlight in a 5-ft radius cylinder. Creatures in the area on cast or entering on a turn make CON save or take 2d10 radiant. Bonus action to move 60 ft.",
+    "requires_sight": true,
+    "target_type": "self"
+  },
+  "guardian_of_faith": {
+    "name": "Guardian of Faith",
+    "level": 4,
+    "school": "conjuration",
+    "casting_time": "action",
+    "range_ft": 30,
+    "components": [
+      "V"
+    ],
+    "duration": "8 hours",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Summon a Large spectral guardian. Hostile creatures entering its 10-ft reach take 20 radiant (or necrotic if you choose) damage; DEX save halves. After 60 total damage dealt, the guardian vanishes.",
+    "requires_sight": true,
+    "target_type": "point_seen"
+  },
+  "wall_of_ice": {
+    "name": "Wall of Ice",
+    "level": 6,
+    "school": "evocation",
+    "casting_time": "action",
+    "range_ft": 120,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "10 minutes",
+    "concentration": true,
+    "effect_type": "manual",
+    "area": {
+      "shape": "wall"
+    },
+    "applies_effects": [
+      {
+        "handler_key": "wall_damage",
+        "name": "Wall of Ice",
+        "description": "Hemispherical or wall ice. Cold damage on cross. Each panel: AC 12, HP 30, vulnerable to fire.",
+        "target_scope": "area",
+        "duration_rounds": 100,
+        "duration_basis": "caster_end_of_turn",
+        "is_concentration": true,
+        "area": {
+          "shape": "wall"
+        },
+        "payload": {
+          "dice": "5d6",
+          "type": "cold",
+          "save": {
+            "ability": "dex",
+            "dc": 14
+          },
+          "blocks_movement": true
+        }
+      }
+    ],
+    "description": "A wall of ice 10 ft thick \u00d7 10 ft \u00d7 10 ft per panel. Creatures crossing take 5d6 cold damage; DEX save halves. Wall blocks line of effect.",
+    "requires_sight": true,
+    "target_type": "wall"
+  },
+  "detect_magic": {
+    "name": "Detect Magic",
+    "level": 1,
+    "school": "divination",
+    "casting_time": "action",
+    "range_ft": 0,
+    "components": [
+      "V",
+      "S"
+    ],
+    "duration": "10 minutes",
+    "concentration": true,
+    "effect_type": "manual",
+    "description": "For the duration, sense the presence of magic within 30 ft. As an action, see a faint aura around any visible magical creature/object and learn its school.",
+    "requires_sight": false,
+    "target_type": "self"
+  },
+  "identify": {
+    "name": "Identify",
+    "level": 1,
+    "school": "divination",
+    "casting_time": "1 minute",
+    "range_ft": 5,
+    "components": [
+      "V",
+      "S",
+      "M"
+    ],
+    "duration": "instantaneous",
+    "concentration": false,
+    "effect_type": "manual",
+    "description": "Touch an item; learn its magical properties, attunement, charges, and any spells affecting it. Or touch a creature and learn what spells affect it.",
+    "requires_sight": false,
+    "target_type": "touch"
+  }
+}

@@ -1,0 +1,143 @@
+{% extends "base.html" %}
+{% block content %}
+<style>
+  /* Debug page — laptop only, layout density over chrome. */
+  body { background: #0a0d10; }
+  .overview { padding: 8px; }
+  .overview-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .overview-head h1 { margin: 0; font-size: 1.1em; }
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--border); margin-bottom: 10px; }
+  .tabs button {
+    background: transparent; color: var(--text-faint); border: 1px solid transparent;
+    border-bottom: none; padding: 6px 14px; font-size: 0.9em; cursor: pointer;
+    border-radius: 6px 6px 0 0;
+  }
+  .tabs button.active { color: var(--text); border-color: var(--border); background: var(--bg-elevated); }
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Each seat panel mirrors a 1920×1080 portable monitor at 1/3 scale (640×360).
+     The iframe renders at 1920×1080 and is scale-transformed to fit. */
+  .seat-grid {
+    display: grid;
+    grid-template-columns: repeat(2, 980px);
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .seat-row {
+    display: flex; gap: 6px;
+  }
+  .panel-frame {
+    position: relative; overflow: hidden;
+    border: 1px solid var(--border); background: #0c1115; border-radius: 6px;
+  }
+  .panel-frame.seat { width: 640px; aspect-ratio: 16/9; }
+  .panel-frame.seat iframe {
+    width: 1280px; height: 720px; border: 0;
+    transform: scale(0.5); transform-origin: top left;
+  }
+  /* Phone controller mirrors a 360×720 phone screen at 1/1 scale or scaled to fit beside the seat. */
+  .panel-frame.controller {
+    width: 334px; height: 360px;
+  }
+  .panel-frame.controller iframe {
+    width: 360px; height: 720px; border: 0;
+    transform: scale(0.5); transform-origin: top left;
+  }
+  .panel-frame.projector {
+    width: calc(980px * 2 + 8px);
+    aspect-ratio: 60/48;
+  }
+  .panel-frame.projector iframe { width: 100%; height: 100%; border: 0; }
+  .panel-frame .label {
+    position: absolute; top: 4px; left: 6px; right: 6px;
+    color: #fff; font-size: 0.68em; text-transform: uppercase;
+    z-index: 10; background: rgba(0,0,0,0.7); padding: 2px 6px;
+    border-radius: 3px; letter-spacing: 0.05em;
+    display: flex; justify-content: space-between; align-items: center; gap: 6px;
+    pointer-events: auto;  /* clickable view-toggle while iframe is otherwise active */
+  }
+  .panel-frame .label .views a { color: #9ad; cursor: pointer; text-decoration: none; margin-left: 4px; font-weight: normal; }
+  .panel-frame .label .views a.active { color: #ffd86b; font-weight: bold; }
+  .empty-msg { color: var(--text-faint); display: flex; align-items: center; justify-content: center; height: 100%; font-size: 0.85em; }
+
+  .dm-frame { width: 100%; height: calc(100vh - 100px); }
+  .dm-frame iframe { width: 100%; height: 100%; border: 1px solid var(--border); border-radius: 6px; background: var(--bg-elevated); }
+</style>
+
+<div class="overview">
+  <div class="overview-head">
+    <h1>Table overview</h1>
+    {% if active_session %}
+      <span class="meta">live session #{{ active_session.id }}{% if active_session.in_combat %} · round {{ active_session.round_number }}{% endif %}</span>
+    {% else %}
+      <span class="meta">no session pushed to table</span>
+    {% endif %}
+  </div>
+
+  <div class="tabs">
+    <button id="tab-views" class="active" onclick="showTab('views')">Player views</button>
+    <button id="tab-dm" onclick="showTab('dm')">DM controls</button>
+  </div>
+
+  <div id="panel-views" class="tab-panel active">
+    <div class="seat-grid">
+      {% for seat in [1,2,3,4,5,6] %}
+      <div class="seat-row">
+        <div class="panel-frame seat">
+          <div class="label">
+            <span>Seat {{ seat }}</span>
+            <span class="views">
+              <a data-view="sheet" class="active" onclick="setView({{ seat }}, 'sheet', this)">sheet</a>
+              <a data-view="map" onclick="setView({{ seat }}, 'map', this)">map</a>
+            </span>
+          </div>
+          <iframe id="seat-{{ seat }}" src="/table/seat/{{ seat }}?view=sheet"></iframe>
+        </div>
+        <div class="panel-frame controller">
+          <div class="label"><span>Phone {{ seat }}</span></div>
+          {% if active_session %}
+            <iframe src="/sessions/{{ active_session.id }}/play?seat={{ seat }}"></iframe>
+          {% else %}
+            <div class="empty-msg">no session</div>
+          {% endif %}
+        </div>
+      </div>
+      {% endfor %}
+    </div>
+
+    <div class="panel-frame projector">
+      <div class="label"><span>Projector (DM = left, players = right)</span></div>
+      {% if active_session %}
+        <iframe src="/projector/{{ active_session.id }}"></iframe>
+      {% else %}
+        <div class="empty-msg">no active session</div>
+      {% endif %}
+    </div>
+  </div>
+
+  <div id="panel-dm" class="tab-panel">
+    <div class="dm-frame">
+      {% if active_session %}
+        <iframe src="/sessions/{{ active_session.id }}"></iframe>
+      {% else %}
+        <div class="empty-msg" style="height:100%">no active session — start one from the campaign master view</div>
+      {% endif %}
+    </div>
+  </div>
+</div>
+
+<script>
+  function setView(seat, view, el) {
+    document.getElementById('seat-' + seat).src = '/table/seat/' + seat + '?view=' + view;
+    const wrap = el.parentElement;
+    wrap.querySelectorAll('a').forEach(a => a.classList.toggle('active', a.dataset.view === view));
+  }
+  function showTab(name) {
+    for (const k of ['views', 'dm']) {
+      document.getElementById('panel-' + k).classList.toggle('active', k === name);
+      document.getElementById('tab-' + k).classList.toggle('active', k === name);
+    }
+  }
+</script>
+{% endblock %}

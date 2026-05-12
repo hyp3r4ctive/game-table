@@ -1,0 +1,1834 @@
+{% extends "base.html" %}
+{% block body_class %}wide{% endblock %}
+{% block content %}
+{% set damage_types = ['slashing','piercing','bludgeoning','acid','cold','fire','force','lightning','necrotic','poison','psychic','radiant','thunder'] %}
+<style>
+  .session-grid { display: grid; grid-template-columns: 2.2fr 1fr; gap: 14px; }
+  .live-card {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    border-radius: 8px;
+    padding: 12px;
+    margin-bottom: 8px;
+    transition: border-color 0.15s;
+  }
+  .live-card.enemy { border-left: 3px solid var(--danger); }
+  .live-card:not(.enemy) { border-left: 3px solid var(--teal); }
+  .live-card.current { border-color: var(--teal-bright); box-shadow: 0 0 0 1px var(--teal-bright); }
+  .live-card.dead { opacity: 0.45; }
+  .hp-bar { background: #0f1316; height: 9px; border-radius: 4px; overflow: hidden; border: 1px solid var(--border); }
+  .hp-fill { background: var(--teal); height: 100%; transition: width 0.3s; }
+  .hp-fill.low { background: var(--danger); }
+  .conditions { color: #b0a0d0; font-size: 0.85em; }
+  .log { max-height: 420px; overflow-y: auto; font-size: 0.88em; }
+  .log-entry { padding: 5px 0; border-bottom: 1px solid var(--border); }
+  .log-time { color: var(--text-faint); font-size: 0.78em; margin-right: 6px; }
+  details summary { cursor: pointer; color: var(--teal-bright); padding: 6px 0; user-select: none; font-size: 0.9em; }
+  details summary:hover { color: var(--teal); }
+  .inline-form { display: flex; gap: 6px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+  .inline-form input, .inline-form select { margin-bottom: 0; }
+  .inline-form input[type="number"] { width: 60px; }
+  .inline-form input[type="text"] { width: 110px; }
+  .inline-form select { width: auto; }
+  .inline-form label { margin-top: 0; color: var(--text-faint); font-size: 0.82em; }
+  .meta { color: var(--text-faint); font-size: 0.85em; }
+  .turn-indicator { color: var(--teal-bright); font-weight: 600; }
+  ol.init-list { padding-left: 24px; }
+  ol.init-list li { padding: 3px 0; color: var(--text-dim); }
+  ol.init-list li.current { color: var(--teal-bright); font-weight: 600; }
+  .seat-row { display: grid; grid-template-columns: 60px 1fr; gap: 8px; padding: 4px 0; font-size: 0.9em; }
+  .seat-row .seat-num { color: var(--text-faint); font-family: monospace; }
+</style>
+
+<h1>{{ campaign.name }} <span class="pill teal">live</span></h1>
+<p class="meta">
+  <a href="/campaigns/{{ campaign.id }}">back to campaign</a> ·
+  <a href="/projector/{{ gs.id }}" target="_blank">open projector view ↗</a>
+  {% if gs.in_combat %} · <span class="pill warn">round {{ gs.round_number }}</span> current: <span class="turn-indicator">{{ current_name }}</span>{% endif %}
+  {% if gs.pushed_to_table %} · <span class="pill teal">on table</span>{% endif %}
+</p>
+
+<div id="reaction-panel" style="display:none; padding:12px; margin-bottom:12px; background:#3a2a10; border:2px solid #d09040; border-radius:8px">
+  <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; flex-wrap:wrap">
+    <div>
+      <strong style="color:#ffcb70; font-size:1.05em">⚡ Reaction available</strong>
+      <div id="reaction-prompt-text" class="meta" style="margin-top:4px"></div>
+    </div>
+    <div id="reaction-actions" class="row" style="gap:6px"></div>
+  </div>
+</div>
+
+<script>
+(function() {
+  const SID = {{ gs.id }};
+  const USER_ID = {{ user.id }};
+  const IS_DM = {{ 'true' if is_dm else 'false' }};
+  const MY_LC_IDS = {{ my_lc_ids|tojson }};
+  async function refreshReaction() {
+    try {
+      const res = await fetch(`/sessions/${SID}/state`);
+      if (!res.ok) return;
+      const state = await res.json();
+      const pr = state.pending_reaction || {};
+      const panel = document.getElementById('reaction-panel');
+      if (!pr.id) { panel.style.display = 'none'; return; }
+      const eligibleIds = pr.eligible_reactor_ids || [];
+      // DM sees prompts for any reactor; players see prompts for reactors they own.
+      const myEligible = IS_DM
+        ? (state.live_characters || []).filter(lc => eligibleIds.includes(lc.id))
+        : (state.live_characters || []).filter(lc => eligibleIds.includes(lc.id) && MY_LC_IDS.includes(lc.id));
+      if (!myEligible.length) { panel.style.display = 'none'; return; }
+      panel.style.display = 'block';
+      const td = pr.trigger_data || {};
+      let promptText = '';
+      let recommendedSpells = [];
+      let nonSpellAction = null;  // {label, payload?} for non-spell reactions like OA
+      if (pr.trigger_type === 'spell_cast') {
+        promptText = `${td.caster_name || '?'} is casting <strong>${td.spell_name || '?'}</strong> (level ${td.spell_level}). Counterspell?`;
+        recommendedSpells = [{ key: 'counterspell', label: 'Counterspell (slot 3)', slot: 3 }];
+      } else if (pr.trigger_type === 'attack_hit') {
+        promptText = `${td.attacker_name || '?'} hit <strong>${td.target_name || 'you'}</strong> (${td.to_hit_total} vs AC ${td.target_ac}, ${td.damage} ${td.damage_type}${td.critical ? ', CRIT' : ''}). Shield?`;
+        recommendedSpells = [{ key: 'shield', label: 'Shield (slot 1)', slot: 1 }];
+      } else if (pr.trigger_type === 'movement_oa') {
+        promptText = `<strong>${td.mover_name || '?'}</strong> is leaving your reach. Opportunity Attack?`;
+        nonSpellAction = { label: 'Opportunity Attack' };
+      } else if (pr.trigger_type === 'damage_taken') {
+        promptText = `You took ${td.damage} ${td.damage_type} damage. Hellish Rebuke?`;
+        recommendedSpells = [{ key: 'hellish_rebuke', label: 'Hellish Rebuke (slot 1)', slot: 1 }];
+      } else {
+        promptText = `${pr.trigger_type}: react?`;
+      }
+      document.getElementById('reaction-prompt-text').innerHTML = promptText;
+      const actions = document.getElementById('reaction-actions');
+      const reactorId = myEligible[0].id;
+      const reactorName = myEligible[0].name;
+      let html = `<span class="meta">as ${reactorName}:</span>`;
+      if (nonSpellAction) {
+        html += `<button type="button" onclick="reactUseNonSpell(${reactorId})" class="small">${nonSpellAction.label}</button>`;
+      }
+      for (const sp of recommendedSpells) {
+        html += `<button type="button" onclick="reactUse(${reactorId}, '${sp.key}', ${sp.slot})" class="small">${sp.label}</button>`;
+      }
+      html += `<button type="button" onclick="reactSkip(${reactorId})" class="small secondary">skip</button>`;
+      actions.innerHTML = html;
+    } catch (e) { console.error('reaction refresh', e); }
+  }
+  window.reactUse = async function(reactor_id, spell_name, slot_level) {
+    const res = await fetch(`/sessions/${SID}/reactions/use`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ reactor_id, spell_name, slot_level }),
+    });
+    if (!res.ok) { alert('reaction failed: ' + await res.text()); }
+    refreshReaction();
+  };
+  window.reactUseNonSpell = async function(reactor_id) {
+    const res = await fetch(`/sessions/${SID}/reactions/use`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ reactor_id }),
+    });
+    if (!res.ok) { alert('reaction failed: ' + await res.text()); }
+    refreshReaction();
+  };
+  window.reactSkip = async function(reactor_id) {
+    const res = await fetch(`/sessions/${SID}/reactions/skip`, {
+      method: 'POST', headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({ reactor_id }),
+    });
+    if (!res.ok) { alert('skip failed: ' + await res.text()); }
+    refreshReaction();
+  };
+  refreshReaction();
+  const es = new EventSource(`/sessions/${SID}/events`);
+  es.addEventListener('state_changed', refreshReaction);
+})();
+</script>
+
+{% if is_dm %}
+<div class="panel">
+  <h2 style="display:inline-block">Battle Map</h2>
+  <form method="post" action="/sessions/{{ gs.id }}/set-map" class="inline-form" style="display:inline-flex; margin-left:12px">
+    <select name="map_id">
+      {% for m in campaign_maps %}<option value="{{ m.id }}" {% if active_map and m.id == active_map.id %}selected{% endif %}>{{ m.name }} ({{ m.grid_cols }}×{{ m.grid_rows }})</option>{% endfor %}
+    </select>
+    <button type="submit" class="small">load map</button>
+  </form>
+  <a href="/campaigns/{{ campaign.id }}/maps" class="meta">manage maps</a>
+
+  {% if active_map %}
+    <div id="map-tools" class="row" style="margin: 10px 0; gap: 6px; align-items:center">
+      <span class="meta">tool:</span>
+      <button type="button" class="small" data-tool="move">move</button>
+      <button type="button" class="small secondary" data-tool="wall">wall</button>
+      <button type="button" class="small secondary" data-tool="zone">zone</button>
+      <select id="zone-type" style="width:auto; margin:0">
+        <option value="bright">bright light</option>
+        <option value="dim">dim light</option>
+        <option value="dark">darkness</option>
+        <option value="magical_dark">magical dark</option>
+        <option value="difficult">difficult terrain</option>
+        <option value="water">water</option>
+      </select>
+      <select id="zone-shape" style="width:auto; margin:0">
+        <option value="rect">rectangle</option>
+        <option value="circle">circle</option>
+        <option value="polygon">polygon</option>
+      </select>
+      <button type="button" class="small secondary" data-tool="building">building</button>
+      <button type="button" class="small secondary" data-tool="draw">draw</button>
+      <input type="color" id="draw-color" value="#3ab5a6" style="width:36px; height:28px; padding:0; margin:0">
+      <button type="button" class="small secondary" data-tool="erase">erase</button>
+      <span style="flex:1"></span>
+      <button type="button" class="small secondary" id="reveal-all-btn">reveal all</button>
+      <button type="button" class="small secondary" id="clear-fog-btn">forget</button>
+      <button type="button" class="small secondary" id="clear-walls-btn">clear walls</button>
+      <button type="button" class="small secondary" id="clear-zones-btn">clear zones</button>
+      <button type="button" class="small secondary" id="clear-draw-btn">clear drawings</button>
+    </div>
+
+    <div id="map-container" data-map-id="{{ active_map.id }}" data-cols="{{ active_map.grid_cols }}" data-rows="{{ active_map.grid_rows }}" data-image="{{ active_map.image_path or '' }}"
+         style="position:relative; max-width:100%; overflow:auto; background:#0c1115; border:1px solid var(--border); border-radius:8px; user-select:none">
+    </div>
+    <p class="meta">move = drag tokens · wall = drag to draw segments · building = click corners then dbl-click/Enter to close · zone = drag corner-to-corner (polygon shape: click vertices, dbl-click/Enter to close) · erase = click on a wall or zone to remove</p>
+  {% else %}
+    <p class="meta">no map loaded. <a href="/campaigns/{{ campaign.id }}/maps">create or pick one →</a></p>
+  {% endif %}
+</div>
+{% endif %}
+
+{% if gs.pending_actions %}
+<div class="panel" style="border-color: var(--warn, #d4a574)">
+  <h2 style="display:inline-block">Pending {% if is_dm %}DM Approval{% else %}Approvals{% endif %}</h2>
+  <span class="meta" style="margin-left:8px">{{ gs.pending_actions|length }} waiting</span>
+  {% for p in gs.pending_actions %}
+    <div class="row" style="justify-content:space-between; padding:8px 0; border-top:1px solid var(--border)">
+      <div>
+        <strong>{{ p.summary }}</strong>
+        <span class="meta"> · by {{ p.requested_by_username }}</span>
+        <div class="meta">
+          {% for label in p.flag_labels %}<span class="pill warn" style="margin-right:4px">{{ label }}</span>{% endfor %}
+        </div>
+      </div>
+      {% if is_dm %}
+        <div class="row" style="gap:6px">
+          <form method="post" action="/sessions/{{ gs.id }}/pending/{{ p.id }}/approve" style="margin:0">
+            <button type="submit" class="small">approve</button>
+          </form>
+          <form method="post" action="/sessions/{{ gs.id }}/pending/{{ p.id }}/deny" style="margin:0">
+            <button type="submit" class="small secondary">deny</button>
+          </form>
+        </div>
+      {% else %}
+        <span class="meta">awaiting DM</span>
+      {% endif %}
+    </div>
+  {% endfor %}
+</div>
+{% endif %}
+
+<div class="session-grid">
+<div>
+
+<div class="panel">
+  <h2>Combat</h2>
+  {% if is_dm %}
+    {% if not gs.in_combat %}
+      <form method="post" action="/sessions/{{ gs.id }}/combat/start" style="display:inline">
+        <button type="submit">start combat (auto-roll initiative)</button>
+      </form>
+      <form method="post" action="/sessions/{{ gs.id }}/long-rest" style="display:inline" onsubmit="return confirm('Long rest? Restores HP and spell slots for all PCs.');">
+        <button type="submit" class="secondary">long rest</button>
+      </form>
+      <form method="post" action="/sessions/{{ gs.id }}/short-rest" style="display:inline" onsubmit="return confirm('Short rest — each PC spends 1 hit die.');">
+        <input type="hidden" name="dice_per_pc" value="1">
+        <button type="submit" class="secondary">short rest</button>
+      </form>
+    {% else %}
+      <form method="post" action="/sessions/{{ gs.id }}/combat/next-turn" style="display:inline">
+        <button type="submit">next turn</button>
+      </form>
+      <form method="post" action="/sessions/{{ gs.id }}/combat/end" style="display:inline">
+        <button type="submit" class="secondary">end combat</button>
+      </form>
+    {% endif %}
+  {% endif %}
+  {% if gs.in_combat %}
+    <ol class="init-list">
+      {% for entry in gs.initiative_order %}
+        <li class="{% if loop.index0 == gs.current_turn_index %}current{% endif %}">
+          {{ entry.name }} <span class="meta">({{ entry.init }})</span>
+        </li>
+      {% endfor %}
+    </ol>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h2>Characters</h2>
+  {% for lc in live_characters %}
+    {% set hp_pct = (lc.current_hp / lc.max_hp * 100) if lc.max_hp else 0 %}
+    {% set obscure = lc.is_enemy and not is_dm %}
+    {% set status = "healthy" %}
+    {% if lc.current_hp <= 0 %}{% set status = "down" %}
+    {% elif hp_pct < 25 %}{% set status = "near death" %}
+    {% elif hp_pct < 50 %}{% set status = "bloodied" %}
+    {% elif hp_pct < 90 %}{% set status = "wounded" %}
+    {% endif %}
+    <div class="live-card {% if lc.is_enemy %}enemy{% endif %} {% if lc.name == current_name %}current{% endif %} {% if lc.current_hp <= 0 %}dead{% endif %}">
+      <div class="row" style="justify-content: space-between">
+        <div>
+          <strong>{{ lc.name }}</strong>
+          <span class="meta">{% if lc.is_enemy %}enemy{% else %}{{ lc.character_class or "PC" }} L{{ lc.level }}{% endif %}{% if not obscure %} · AC {{ lc.armor_class }}{% endif %}</span>
+        </div>
+        {% if lc.name == current_name %}<span class="pill teal">turn</span>{% endif %}
+      </div>
+      {% if obscure %}
+        <div class="row" style="margin-top:6px"><span class="pill {% if status == 'down' %}danger{% elif status in ['bloodied','near death'] %}warn{% endif %}">{{ status }}</span>
+        {% if lc.conditions %}
+          <span class="conditions">{% for c in lc.conditions %}{{ c.name }}{% if not loop.last %}, {% endif %}{% endfor %}</span>
+        {% endif %}
+        </div>
+      {% else %}
+        <div class="hp-bar" style="margin: 6px 0"><div class="hp-fill {% if hp_pct < 30 %}low{% endif %}" style="width: {{ hp_pct }}%"></div></div>
+        <div class="row">
+          <span>HP {{ lc.current_hp }} / {{ lc.max_hp }}{% if lc.temp_hp %} (+{{ lc.temp_hp }} temp){% endif %}</span>
+          {% if lc.conditions %}
+            <span class="conditions">{% for c in lc.conditions %}{{ c.name }}{% if not loop.last %}, {% endif %}{% endfor %}</span>
+          {% endif %}
+          {% if lc.exhaustion_level %}<span class="pill warn">exhaustion {{ lc.exhaustion_level }}/6</span>{% endif %}
+        </div>
+        {% if not lc.is_enemy and lc.current_hp <= 0 %}
+        <div class="row" style="gap:6px; margin-top:6px">
+          {% if lc.is_dead %}
+            <span class="pill danger">DEAD</span>
+          {% elif lc.is_stable %}
+            <span class="pill">stable (0 HP)</span>
+          {% else %}
+            <span class="meta">death saves:</span>
+            <span class="pill">✓ {{ lc.death_save_successes }}/3</span>
+            <span class="pill warn">✗ {{ lc.death_save_failures }}/3</span>
+          {% endif %}
+        </div>
+        {% endif %}
+        {% set my_effects = effects_by_target.get(lc.id, []) %}
+        {% if my_effects %}
+        <div class="row" style="gap:4px; flex-wrap:wrap; margin-top:6px">
+          <span class="meta">effects:</span>
+          {% for eff in my_effects %}
+            <span class="pill{% if eff.is_concentration %} teal{% endif %}" title="{{ eff.description|e }}">{{ eff.name }}{% if eff.is_concentration %} ⚡{% endif %}{% if eff.duration_rounds %} ({{ eff.duration_rounds }}r){% endif %}</span>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% set conc_name = concentration_by_lc.get(lc.id) %}
+        {% if conc_name %}
+        <div class="row" style="margin-top:4px">
+          <span class="pill teal" title="Concentration: ends if caster fails CON save on damage, casts another concentration spell, or is incapacitated.">⚡ concentrating on {{ conc_name }}</span>
+        </div>
+        {% endif %}
+      {% endif %}
+
+      {% set can_act_on_lc = is_dm or (lc.owner_id == user.id and not lc.is_enemy) %}
+      {% if is_dm %}
+      <details>
+        <summary>edit</summary>
+        <form method="post" action="/sessions/{{ gs.id }}/lc/{{ lc.id }}/edit" class="inline-form" style="flex-direction:column; align-items:flex-start; gap:8px">
+          <div class="row" style="gap:6px; flex-wrap:wrap">
+            <label>name <input type="text" name="name" value="{{ lc.name }}" style="width:130px; margin:0"></label>
+            <label>HP <input type="number" name="current_hp" value="{{ lc.current_hp }}" style="width:60px; margin:0"></label>
+            <label>/ <input type="number" name="max_hp" value="{{ lc.max_hp }}" style="width:60px; margin:0"></label>
+            <label>temp <input type="number" name="temp_hp" value="{{ lc.temp_hp or 0 }}" style="width:50px; margin:0"></label>
+            <label>AC <input type="number" name="armor_class" value="{{ lc.armor_class }}" style="width:50px; margin:0"></label>
+            <label>spd <input type="number" name="speed_ft" value="{{ lc.speed_ft }}" style="width:55px; margin:0"></label>
+          </div>
+          <div class="row" style="gap:6px; flex-wrap:wrap">
+            <label>STR <input type="number" name="strength" value="{{ lc.strength }}" style="width:50px; margin:0"></label>
+            <label>DEX <input type="number" name="dexterity" value="{{ lc.dexterity }}" style="width:50px; margin:0"></label>
+            <label>CON <input type="number" name="constitution" value="{{ lc.constitution }}" style="width:50px; margin:0"></label>
+            <label>INT <input type="number" name="intelligence" value="{{ lc.intelligence }}" style="width:50px; margin:0"></label>
+            <label>WIS <input type="number" name="wisdom" value="{{ lc.wisdom }}" style="width:50px; margin:0"></label>
+            <label>CHA <input type="number" name="charisma" value="{{ lc.charisma }}" style="width:50px; margin:0"></label>
+          </div>
+          <div class="row" style="gap:6px; flex-wrap:wrap">
+            <label>reach (ft) <input type="number" name="melee_reach_ft" value="{{ lc.melee_reach_ft or 5 }}" style="width:55px; margin:0"></label>
+            <label>attacks/action <input type="number" name="attacks_per_action" value="{{ lc.attacks_per_action or 1 }}" style="width:55px; margin:0"></label>
+            <label>sneak d6 <input type="number" name="sneak_attack_dice" value="{{ lc.sneak_attack_dice or 0 }}" style="width:55px; margin:0"></label>
+            <label>darkvision <input type="number" name="darkvision_ft" value="{{ lc.darkvision_ft or 0 }}" style="width:55px; margin:0"></label>
+            <label>vision <input type="number" name="vision_normal_ft" value="{{ lc.vision_normal_ft or 0 }}" style="width:55px; margin:0"></label>
+            <label>light <input type="number" name="light_emission_ft" value="{{ lc.light_emission_ft or 0 }}" style="width:55px; margin:0"></label>
+            <label>level <input type="number" name="level" value="{{ lc.level or 1 }}" min="1" max="20" style="width:55px; margin:0"></label>
+            <label>exhaustion <input type="number" name="exhaustion_level" value="{{ lc.exhaustion_level or 0 }}" min="0" max="6" style="width:55px; margin:0"></label>
+          </div>
+          <div class="row" style="gap:6px; flex-wrap:wrap">
+            <label style="flex:1; min-width:240px">resist <input type="text" name="damage_resistances" value="{{ lc.damage_resistances|join(',') if lc.damage_resistances else '' }}" placeholder="fire, cold, ..." style="width:100%; margin:0"></label>
+            <label style="flex:1; min-width:240px">immune <input type="text" name="damage_immunities" value="{{ lc.damage_immunities|join(',') if lc.damage_immunities else '' }}" placeholder="poison, ..." style="width:100%; margin:0"></label>
+          </div>
+          <div class="row" style="gap:6px; flex-wrap:wrap">
+            <label style="flex:1; min-width:240px">vulnerable <input type="text" name="damage_vulnerabilities" value="{{ lc.damage_vulnerabilities|join(',') if lc.damage_vulnerabilities else '' }}" placeholder="radiant, ..." style="width:100%; margin:0"></label>
+            <label style="flex:1; min-width:240px">save profs <input type="text" name="saving_throw_profs" value="{{ lc.saving_throw_profs|join(',') if lc.saving_throw_profs else '' }}" placeholder="strength, constitution, ..." style="width:100%; margin:0"></label>
+          </div>
+          <div class="row" style="gap:6px; flex-wrap:wrap">
+            <label style="flex:1; min-width:300px">class features <input type="text" name="class_features" value="{{ lc.class_features|join(',') if lc.class_features else '' }}" placeholder="divine_smite, extra_attack, ..." style="width:100%; margin:0"></label>
+          </div>
+          <button type="submit" class="small">save</button>
+        </form>
+      </details>
+
+      <details>
+        <summary>actions</summary>
+
+        <form method="post" action="/sessions/{{ gs.id }}/damage" class="inline-form">
+          <input type="hidden" name="target_id" value="{{ lc.id }}">
+          <label>damage</label>
+          <input type="number" name="amount" value="0">
+          <select name="damage_type">
+            {% for dt in damage_types %}<option value="{{ dt }}">{{ dt }}</option>{% endfor %}
+          </select>
+          <button type="submit" class="small">apply</button>
+        </form>
+
+        <form method="post" action="/sessions/{{ gs.id }}/heal" class="inline-form">
+          <input type="hidden" name="target_id" value="{{ lc.id }}">
+          <label>heal</label>
+          <input type="number" name="amount" value="0">
+          <button type="submit" class="small">apply</button>
+        </form>
+
+        <form method="post" action="/sessions/{{ gs.id }}/save" class="inline-form">
+          <input type="hidden" name="target_id" value="{{ lc.id }}">
+          <label>save</label>
+          <select name="ability">
+            <option>strength</option><option>dexterity</option><option>constitution</option>
+            <option>intelligence</option><option>wisdom</option><option>charisma</option>
+          </select>
+          <label>mod</label><input type="number" name="save_modifier" value="0">
+          <label>DC</label><input type="number" name="dc" value="13">
+          <button type="submit" class="small">roll</button>
+        </form>
+
+        <form method="post" action="/sessions/{{ gs.id }}/conditions/add" class="inline-form">
+          <input type="hidden" name="target_id" value="{{ lc.id }}">
+          <label>condition</label>
+          <select name="condition_name">
+            {% for c in conditions %}<option value="{{ c.key }}">{{ c.name }}</option>{% endfor %}
+          </select>
+          <label>rounds</label><input type="number" name="duration_rounds">
+          <button type="submit" class="small">apply</button>
+        </form>
+
+        {% if lc.conditions %}
+        <form method="post" action="/sessions/{{ gs.id }}/conditions/remove" class="inline-form">
+          <input type="hidden" name="target_id" value="{{ lc.id }}">
+          <label>remove</label>
+          <select name="condition_name">
+            {% for c in lc.conditions %}<option value="{{ c.name }}">{{ c.name }}</option>{% endfor %}
+          </select>
+          <button type="submit" class="small secondary">remove</button>
+        </form>
+        {% endif %}
+
+        <form method="post" action="/sessions/{{ gs.id }}/attack" class="inline-form">
+          <input type="hidden" name="attacker_id" value="{{ lc.id }}">
+          <label>attack</label>
+          <select name="target_id">
+            {% for t in live_characters %}{% if t.id != lc.id %}<option value="{{ t.id }}">{{ t.name }}</option>{% endif %}{% endfor %}
+          </select>
+          <label>+hit</label><input type="number" name="to_hit_modifier" value="3">
+          <span class="meta">dmg:</span>
+          {% with form_id='atk-' ~ lc.id, expression_name='damage_dice' %}{% include "_dice_picker.html" %}{% endwith %}
+          <select name="damage_type">
+            {% for dt in damage_types %}<option value="{{ dt }}">{{ dt }}</option>{% endfor %}
+          </select>
+          {% if lc.sneak_attack_dice %}
+          <label style="display:inline-flex; align-items:center; gap:4px; margin:0; color:var(--text-faint); font-size:0.82em" title="+{{ lc.sneak_attack_dice }}d6 if eligible (advantage or ally adjacent). Once per turn.">
+            <input type="checkbox" name="sneak_attack" value="true"{% if lc.sneak_attack_used_this_turn %} disabled{% endif %}> sneak
+          </label>
+          {% endif %}
+          {% if 'divine_smite' in (lc.class_features or []) %}
+          <label class="meta" style="font-size:0.82em" title="Spend a spell slot for +Nd8 radiant on hit (2d8 at L1, +1d8 per slot up to 5d8).">
+            smite slot <input type="number" name="smite_slot_level" min="0" max="5" value="0" style="width:50px; margin:0">
+          </label>
+          {% endif %}
+          <label class="meta" style="font-size:0.82em">cover
+            <select name="cover" style="margin:0">
+              <option value="none">none</option>
+              <option value="half">half (+2 AC)</option>
+              <option value="three_quarters">3/4 (+5 AC)</option>
+              <option value="full">full (no shot)</option>
+            </select>
+          </label>
+          <label class="meta" style="font-size:0.82em" title="Ranged short/long range — leave 0 to skip range-band rules.">
+            range <input type="number" name="short_range_ft" value="0" style="width:50px; margin:0">/<input type="number" name="long_range_ft" value="0" style="width:50px; margin:0">
+          </label>
+          <label style="display:inline-flex; align-items:center; gap:4px; margin:0; color:var(--text-faint); font-size:0.82em" title="Off-hand light-weapon attack: consumes bonus action instead of action. Drop the +ability mod from damage_dice unless you have Two-Weapon Fighting style.">
+            <input type="checkbox" name="off_hand" value="true"> off-hand (BA)
+          </label>
+          <button type="submit" class="small">attack</button>
+        </form>
+
+        <form method="post" action="/sessions/{{ gs.id }}/grapple" class="inline-form">
+          <input type="hidden" name="attacker_id" value="{{ lc.id }}">
+          <label>grapple</label>
+          <select name="target_id">
+            {% for t in live_characters %}{% if t.id != lc.id %}<option value="{{ t.id }}">{{ t.name }}</option>{% endif %}{% endfor %}
+          </select>
+          <button type="submit" class="small">grapple</button>
+        </form>
+
+        <form method="post" action="/sessions/{{ gs.id }}/shove" class="inline-form">
+          <input type="hidden" name="attacker_id" value="{{ lc.id }}">
+          <label>shove</label>
+          <select name="target_id">
+            {% for t in live_characters %}{% if t.id != lc.id %}<option value="{{ t.id }}">{{ t.name }}</option>{% endif %}{% endfor %}
+          </select>
+          <select name="mode">
+            <option value="prone">prone</option>
+            <option value="push">push 5ft</option>
+          </select>
+          <button type="submit" class="small">shove</button>
+        </form>
+
+        <form method="post" action="/sessions/{{ gs.id }}/use-potion" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <label>potion</label>
+          <select name="potion_type">
+            <option value="healing">healing (2d4+2)</option>
+            <option value="greater_healing">greater (4d4+4)</option>
+            <option value="superior_healing">superior (8d4+8)</option>
+            <option value="supreme_healing">supreme (10d4+20)</option>
+          </select>
+          <button type="submit" class="small">drink</button>
+        </form>
+
+        <form method="post" action="/sessions/{{ gs.id }}/skill-check" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <label>check</label>
+          <select name="skill">
+            <option>Acrobatics</option><option>Animal Handling</option><option>Arcana</option>
+            <option>Athletics</option><option>Deception</option><option>History</option>
+            <option>Insight</option><option>Intimidation</option><option>Investigation</option>
+            <option>Medicine</option><option>Nature</option><option selected>Perception</option>
+            <option>Performance</option><option>Persuasion</option><option>Religion</option>
+            <option>Sleight of Hand</option><option>Stealth</option><option>Survival</option>
+          </select>
+          <label>DC</label><input type="number" name="dc" value="12" style="width:50px">
+          <button type="submit" class="small">roll</button>
+        </form>
+
+        {% if not lc.is_enemy and is_dm %}
+        <form method="post" action="/sessions/{{ gs.id }}/inspire" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <button type="submit" class="small">{% if lc.is_inspired %}revoke{% else %}grant{% endif %} inspiration{% if lc.is_inspired %} (★){% endif %}</button>
+        </form>
+        {% endif %}
+
+        {% if lc.resources %}
+        <div class="row" style="gap:6px; flex-wrap:wrap; margin-top:4px">
+          <span class="meta">resources:</span>
+          {% for k, r in lc.resources.items() %}
+            <form method="post" action="/sessions/{{ gs.id }}/lc/{{ lc.id }}/resource/use" class="inline-form" style="margin:0">
+              <input type="hidden" name="key" value="{{ k }}">
+              <input type="hidden" name="amount" value="1">
+              <button type="submit" class="small secondary" title="{{ r.label }} ({{ r.recharge }})" {% if not r.current %}disabled{% endif %}>{{ r.label }} {{ r.current }}/{{ r.max }}</button>
+            </form>
+          {% endfor %}
+        </div>
+        {% endif %}
+
+        {% if 'action_surge' in (lc.class_features or []) %}
+        <form method="post" action="/sessions/{{ gs.id }}/action-surge" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <button type="submit" class="small">Action Surge</button>
+        </form>
+        {% endif %}
+        {% if 'second_wind' in (lc.class_features or []) %}
+        <form method="post" action="/sessions/{{ gs.id }}/second-wind" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <button type="submit" class="small">Second Wind</button>
+        </form>
+        {% endif %}
+        {% if 'channel_divinity' in (lc.class_features or []) %}
+        <form method="post" action="/sessions/{{ gs.id }}/channel-divinity" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <label>channel divinity</label>
+          <input type="text" name="kind" placeholder="turn undead, sacred weapon, ..." value="turn_undead" style="width:170px">
+          <button type="submit" class="small">use</button>
+        </form>
+        {% endif %}
+        {% if 'ki' in (lc.class_features or []) %}
+        <form method="post" action="/sessions/{{ gs.id }}/ki" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <label>ki</label>
+          <select name="action">
+            <option value="flurry">Flurry of Blows</option>
+            <option value="patient">Patient Defense</option>
+            <option value="step">Step of the Wind</option>
+          </select>
+          <button type="submit" class="small">spend (BA)</button>
+        </form>
+        {% endif %}
+        {% if 'rage' in (lc.class_features or []) %}
+        <form method="post" action="/sessions/{{ gs.id }}/rage" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <button type="submit" class="small">{% if lc.resources and lc.resources.get('rage') and lc.resources['rage'].get('current', 0) > 0 %}RAGE{% else %}end Rage{% endif %}</button>
+        </form>
+        {% endif %}
+        {% if 'cunning_action' in (lc.class_features or []) %}
+        <form method="post" action="/sessions/{{ gs.id }}/cunning-action" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <label>cunning</label>
+          <select name="action">
+            <option value="dash">Dash</option>
+            <option value="disengage">Disengage</option>
+            <option value="hide">Hide</option>
+          </select>
+          <button type="submit" class="small">do (BA)</button>
+        </form>
+        {% endif %}
+        {% if 'bardic_inspiration' in (lc.class_features or []) %}
+        <form method="post" action="/sessions/{{ gs.id }}/bardic-inspire" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <label>inspire</label>
+          <select name="target_id">
+            {% for t in live_characters %}{% if t.id != lc.id and not t.is_enemy %}<option value="{{ t.id }}">{{ t.name }}</option>{% endif %}{% endfor %}
+          </select>
+          <select name="die_size"><option value="6">d6</option><option value="8">d8</option><option value="10">d10</option><option value="12">d12</option></select>
+          <button type="submit" class="small">inspire</button>
+        </form>
+        {% endif %}
+        {% set has_bardic_die = (effects_by_target.get(lc.id, []) | selectattr('spell_key', 'equalto', 'bardic_inspiration') | list) %}
+        {% if has_bardic_die %}
+        <form method="post" action="/sessions/{{ gs.id }}/spend-bardic" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <button type="submit" class="small">spend bardic die</button>
+        </form>
+        {% endif %}
+        {% if 'lay_on_hands' in (lc.class_features or []) %}
+        <form method="post" action="/sessions/{{ gs.id }}/lay-on-hands" class="inline-form">
+          <input type="hidden" name="actor_id" value="{{ lc.id }}">
+          <label>lay on hands</label>
+          <select name="target_id">
+            {% for t in live_characters %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}
+          </select>
+          <input type="number" name="amount" value="5" min="1" style="width:60px">
+          <label style="display:inline-flex; align-items:center; gap:4px"><input type="checkbox" name="cure_poison" value="true"> cure poison (5pt)</label>
+          <button type="submit" class="small">heal</button>
+        </form>
+        {% endif %}
+
+        {% if is_dm %}
+        <details style="margin-top:4px">
+          <summary class="meta" style="font-size:0.8em">+ resource (DM)</summary>
+          <form method="post" action="/sessions/{{ gs.id }}/lc/{{ lc.id }}/resource/set" class="inline-form" style="margin-top:4px">
+            <label>key</label><input type="text" name="key" placeholder="ki" style="width:90px">
+            <label>label</label><input type="text" name="label" placeholder="Ki Points" style="width:120px">
+            <label>cur/max</label><input type="number" name="current" value="0" style="width:50px">/<input type="number" name="max_value" value="0" style="width:50px">
+            <select name="recharge">
+              <option value="long_rest">long rest</option>
+              <option value="short_rest">short rest</option>
+              <option value="other">other</option>
+            </select>
+            <button type="submit" class="small">save</button>
+          </form>
+        </details>
+        {% endif %}
+
+        {% if not lc.is_enemy %}
+        <form method="post" action="/sessions/{{ gs.id }}/cast" class="inline-form cast-form" data-caster-id="{{ lc.id }}" onsubmit="return prepareCastSubmit(this)">
+          <input type="hidden" name="caster_id" value="{{ lc.id }}">
+          <input type="hidden" name="aoe_x" value="">
+          <input type="hidden" name="aoe_y" value="">
+          <input type="hidden" name="wall_x2" value="">
+          <input type="hidden" name="wall_y2" value="">
+          <input type="hidden" name="target_ids" value="">
+          <label>cast</label>
+          <select name="spell_name" class="spell-select" onchange="onSpellChange(this)">
+            {% for lvl in range(0, 10) %}{% set lvl_spells = spells | selectattr('level', 'equalto', lvl) | list %}{% if lvl_spells %}<optgroup label="{% if lvl == 0 %}cantrip{% else %}level {{ lvl }}{% endif %}">{% for s in lvl_spells %}<option value="{{ s.key }}" data-area='{{ s.area|tojson if s.area else "null" }}' data-range="{{ s.range_ft }}" data-target-type="{{ s.target_type }}" data-level="{{ s.level }}" data-components="{{ (s.components | join('') if s.components else '') }}" data-material="{{ s.material_component or '' }}" data-casting-time="{{ s.casting_time or 'action' }}">{{ s.name }}{% if s.area %} ({{ s.area.shape }}){% endif %}</option>{% endfor %}</optgroup>{% endif %}{% endfor %}
+          </select>
+          <span class="meta cast-spell-info" style="font-size:0.78em"></span>
+          <label class="cast-slot-label">slot</label><input type="number" name="slot_level" value="1" min="1" max="9" class="cast-slot-input" style="width:50px">
+          <label>targets</label>
+          <select class="cast-targets" multiple size="3" style="min-width:140px">
+            <optgroup label="self">
+              <option value="{{ lc.id }}">{{ lc.name }} (self)</option>
+            </optgroup>
+            {% set allies = live_characters | selectattr('is_enemy', 'false') | rejectattr('id', 'equalto', lc.id) | list %}
+            {% if allies %}<optgroup label="allies">{% for t in allies %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</optgroup>{% endif %}
+            {% set enemies = live_characters | selectattr('is_enemy', 'true') | list %}
+            {% if enemies %}<optgroup label="enemies">{% for t in enemies %}<option value="{{ t.id }}">{{ t.name }}</option>{% endfor %}</optgroup>{% endif %}
+          </select>
+          {% set cm = casting_mods_by_lc.get(lc.id, {'dc': 13, 'atk_mod': 5, 'scm': 3}) %}
+          <label>DC</label><input type="number" name="spell_save_dc" value="{{ cm.dc }}" style="width:50px">
+          <label>+atk</label><input type="number" name="spell_attack_modifier" value="{{ cm.atk_mod }}" style="width:50px">
+          <label>+mod</label><input type="number" name="spellcasting_modifier" value="{{ cm.scm }}" style="width:50px">
+          <button type="submit" class="small">cast</button>
+        </form>
+        <div class="meta">slots: {% for k, v in lc.spell_slots.items() %}L{{k}}:{{v}} {% endfor %}</div>
+        {% endif %}
+      </details>
+      {% endif %}
+    </div>
+  {% endfor %}
+</div>
+
+{% if is_dm %}
+<div class="panel" id="effects-panel-dm">
+  <h3 style="display:inline-block">Active effects</h3>
+  <span class="meta" id="effects-count" style="margin-left:8px">—</span>
+  <div id="effects-list-dm" style="margin-top:8px"></div>
+  <details style="margin-top:10px">
+    <summary style="cursor:pointer; color:var(--teal-bright)">+ Apply custom effect</summary>
+    <div class="row" style="gap:6px; margin-top:8px; flex-wrap:wrap">
+      <select id="eff-target" style="min-width:140px">
+        <option value="">—area effect—</option>
+        {% for lc in live_characters %}<option value="{{ lc.id }}">{{ lc.name }}</option>{% endfor %}
+      </select>
+      <input id="eff-name" type="text" placeholder="effect name" style="width:160px; margin:0">
+      <input id="eff-rounds" type="number" placeholder="rounds" min="1" style="width:80px; margin:0">
+      <label style="display:inline-flex; align-items:center; gap:4px; margin:0; color:var(--text)"><input id="eff-conc" type="checkbox"> conc</label>
+      <input id="eff-desc" type="text" placeholder="description (optional)" style="flex:1; min-width:200px; margin:0">
+      <button type="button" onclick="addCustomEffect()" class="small">apply</button>
+    </div>
+    <p class="meta" style="margin-top:6px; font-size:0.82em">Freeform = no handler_key; the effect shows on UIs and ticks down but the engine doesn't enforce it. Use the spell catalog for mechanical effects (Bless, Haste, etc.).</p>
+  </details>
+  <details style="margin-top:10px">
+    <summary style="cursor:pointer; color:var(--teal-bright)">+ Place wall effect</summary>
+    <div class="row" style="gap:6px; margin-top:8px; flex-wrap:wrap; align-items:center">
+      <input id="wall-name" type="text" placeholder="wall name (e.g. Wall of Fire)" style="width:200px; margin:0">
+      <span class="meta">x1</span><input id="wall-x1" type="number" style="width:60px; margin:0">
+      <span class="meta">y1</span><input id="wall-y1" type="number" style="width:60px; margin:0">
+      <span class="meta">x2</span><input id="wall-x2" type="number" style="width:60px; margin:0">
+      <span class="meta">y2</span><input id="wall-y2" type="number" style="width:60px; margin:0">
+      <span class="meta">dmg</span><input id="wall-dice" type="text" placeholder="5d8" style="width:70px; margin:0">
+      <select id="wall-type" style="margin:0">
+        {% for dt in damage_types %}<option value="{{ dt }}">{{ dt }}</option>{% endfor %}
+      </select>
+      <label style="display:inline-flex; align-items:center; gap:4px; margin:0; color:var(--text)"><input id="wall-blocks" type="checkbox"> blocks movement</label>
+      <input id="wall-rounds" type="number" placeholder="rounds" min="1" style="width:80px; margin:0" value="10">
+      <button type="button" onclick="placeWall()" class="small">place wall</button>
+    </div>
+    <p class="meta" style="margin-top:6px; font-size:0.82em">Damage walls (Wall of Fire, Wall of Thorns, Blade Barrier) deal dmg per cell crossed. Block walls (Wall of Force, Wall of Stone) prevent the step entirely; leave dmg blank.</p>
+  </details>
+</div>
+
+<script>
+(function() {
+  const SID = {{ gs.id }};
+  const lcNames = { {% for lc in live_characters %}{{ lc.id }}: {{ lc.name | tojson }}{% if not loop.last %},{% endif %}{% endfor %} };
+  async function refreshEffects() {
+    try {
+      const res = await fetch(`/sessions/${SID}/state`);
+      if (!res.ok) return;
+      const state = await res.json();
+      const effs = state.active_effects || [];
+      document.getElementById('effects-count').textContent = effs.length ? `${effs.length} active` : 'none';
+      const list = document.getElementById('effects-list-dm');
+      if (!effs.length) { list.innerHTML = '<p class="meta" style="font-size:0.85em">none</p>'; return; }
+      list.innerHTML = effs.map(e => {
+        const who = e.target_live_id ? (lcNames[e.target_live_id] || `#${e.target_live_id}`) : '(area)';
+        const dur = e.duration_rounds != null ? `${e.duration_rounds}r` : '∞';
+        const conc = e.is_concentration ? ' <span class="pill warn">conc</span>' : '';
+        const note = !e.handler_key ? ' <span class="pill">note</span>' : '';
+        const desc = e.description ? `<div class="meta" style="font-size:0.82em">${escapeHtml(e.description)}</div>` : '';
+        return `<div style="padding:6px 8px; background:var(--bg-elevated); border:1px solid var(--border); border-radius:4px; margin-bottom:4px">
+          <div class="row" style="justify-content:space-between; gap:8px">
+            <div><strong>${escapeHtml(e.name)}</strong> <span class="meta">→ ${escapeHtml(who)}</span> ${conc}${note} <span class="meta">${dur}</span></div>
+            <button type="button" class="small secondary" onclick="removeEffect(${e.id})">remove</button>
+          </div>
+          ${desc}
+        </div>`;
+      }).join('');
+    } catch (e) {}
+  }
+  function escapeHtml(s) { return String(s||'').replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c])); }
+  window.addCustomEffect = async function() {
+    const target_id = document.getElementById('eff-target').value || null;
+    const name = document.getElementById('eff-name').value.trim();
+    const description = document.getElementById('eff-desc').value.trim();
+    const rounds = document.getElementById('eff-rounds').value;
+    const conc = document.getElementById('eff-conc').checked;
+    if (!name) { return; }
+    const body = { name, description, is_concentration: conc };
+    if (target_id) body.target_id = parseInt(target_id);
+    if (rounds) body.duration_rounds = parseInt(rounds);
+    await fetch(`/sessions/${SID}/effects/add`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    document.getElementById('eff-name').value = '';
+    document.getElementById('eff-desc').value = '';
+    document.getElementById('eff-rounds').value = '';
+    document.getElementById('eff-conc').checked = false;
+    refreshEffects();
+  };
+  window.removeEffect = async function(id) {
+    await fetch(`/sessions/${SID}/effects/${id}/remove`, { method: 'POST' });
+    refreshEffects();
+  };
+  window.placeWall = async function() {
+    const name = document.getElementById('wall-name').value.trim() || 'Wall';
+    const x1 = parseFloat(document.getElementById('wall-x1').value);
+    const y1 = parseFloat(document.getElementById('wall-y1').value);
+    const x2 = parseFloat(document.getElementById('wall-x2').value);
+    const y2 = parseFloat(document.getElementById('wall-y2').value);
+    if ([x1,y1,x2,y2].some(n => isNaN(n))) { alert('all four wall coordinates required'); return; }
+    const dice = document.getElementById('wall-dice').value.trim();
+    const dmgType = document.getElementById('wall-type').value;
+    const blocks = document.getElementById('wall-blocks').checked;
+    const rounds = parseInt(document.getElementById('wall-rounds').value) || 10;
+    const handler_key = dice ? 'wall_damage' : '';
+    const payload = {};
+    if (dice) { payload.dice = dice; payload.type = dmgType; }
+    if (blocks) payload.blocks_movement = true;
+    const body = {
+      name, handler_key,
+      duration_rounds: rounds,
+      area: { shape: 'wall', points: [[x1,y1],[x2,y2]] },
+      payload,
+    };
+    await fetch(`/sessions/${SID}/effects/add`, {
+      method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)
+    });
+    ['wall-name','wall-x1','wall-y1','wall-x2','wall-y2','wall-dice'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('wall-blocks').checked = false;
+    refreshEffects();
+  };
+  // Refresh on load + on every state change.
+  window.__refreshEffectsDM = refreshEffects;
+  refreshEffects();
+  const es = new EventSource(`/sessions/${SID}/events`);
+  es.addEventListener('state_changed', refreshEffects);
+})();
+</script>
+
+{% if gs.undo_stack %}
+<div class="panel">
+  <h3>Undo</h3>
+  <p class="meta">last action: {{ gs.undo_stack[-1].label }} <span style="color:var(--text-faint)">({{ gs.undo_stack|length }} on stack)</span></p>
+  <form method="post" action="/sessions/{{ gs.id }}/undo">
+    <button type="submit" class="secondary">undo last action</button>
+  </form>
+</div>
+{% endif %}
+
+<div class="panel">
+  <h3>Table</h3>
+  {% if gs.pushed_to_table %}
+    <p class="meta">session is live on the table.</p>
+    <div>
+      {% for seat in [1,2,3,4,5,6] %}
+        <div class="seat-row">
+          <span class="seat-num">seat {{ seat }}</span>
+          <span>
+            {% set claimed_id = gs.seat_assignments.get(seat|string) %}{% if claimed_id %}{% for lc in live_characters %}{% if lc.id == claimed_id %}{{ lc.name }}{% endif %}{% endfor %}{% else %}<span class="meta">open</span>{% endif %}
+            {% set ov = (gs.seat_overrides or {}).get(seat|string) %}{% if ov %} <span class="pill warn">override: {{ ov.kind }}</span>{% endif %}
+          </span>
+        </div>
+      {% endfor %}
+    </div>
+    <form method="post" action="/sessions/{{ gs.id }}/unpush" style="margin-top:8px">
+      <button type="submit" class="secondary">pull from table</button>
+    </form>
+  {% else %}
+    <form method="post" action="/sessions/{{ gs.id }}/push">
+      <button type="submit">push session to table</button>
+    </form>
+  {% endif %}
+</div>
+
+{% if gs.pushed_to_table %}
+<div class="panel">
+  <h3>Seat overrides</h3>
+  <p class="meta">push an image/video URL or text to one or all seat screens. clear by leaving the URL blank.</p>
+  <form method="post" action="" id="seat-override-form" class="inline-form">
+    <label>seat</label>
+    <select name="seat_target" style="width:auto">
+      <option value="all">all seats</option>
+      {% for s in [1,2,3,4,5,6] %}<option value="{{ s }}">seat {{ s }}</option>{% endfor %}
+    </select>
+    <label>kind</label>
+    <select name="kind" style="width:auto">
+      <option value="image">image</option>
+      <option value="video">video</option>
+      <option value="text">text</option>
+    </select>
+    <input type="text" name="url" placeholder="image URL, video URL, or text" style="flex:1; min-width:240px">
+    <button type="submit" class="small">push</button>
+  </form>
+  {% set overrides = gs.seat_overrides or {} %}
+  {% if overrides %}
+  <div style="margin-top:8px">
+    {% for seat_key, ov in overrides.items() %}
+      <div class="row" style="justify-content:space-between; padding:4px 0">
+        <span><span class="meta">{{ seat_key }}:</span> {{ ov.kind }} — <span class="meta" style="word-break:break-all">{{ ov.url[:80] }}{% if ov.url|length > 80 %}…{% endif %}</span></span>
+        <form method="post" action="/sessions/{{ gs.id }}/seat/{{ seat_key }}/clear-override" style="margin:0">
+          <button type="submit" class="small secondary">clear</button>
+        </form>
+      </div>
+    {% endfor %}
+  </div>
+  {% endif %}
+  <script>
+    document.getElementById('seat-override-form').addEventListener('submit', function(e) {
+      const seat = this.querySelector('[name=seat_target]').value;
+      this.action = `/sessions/{{ gs.id }}/seat/${seat}/override`;
+    });
+  </script>
+</div>
+{% endif %}
+
+{% if encounter_data %}
+<div class="panel">
+  <h3>Encounter difficulty</h3>
+  <p class="meta">{{ encounter_data.enemy_count }} enemies · raw XP {{ encounter_data.raw_xp }} × {{ '%.1f' | format(encounter_data.multiplier) }} = <strong>{{ encounter_data.adjusted_xp }} adjusted XP</strong></p>
+  <p>thresholds:
+    <span class="meta">easy {{ encounter_data.thresholds.easy }}</span> ·
+    <span class="meta">medium {{ encounter_data.thresholds.medium }}</span> ·
+    <span class="meta">hard {{ encounter_data.thresholds.hard }}</span> ·
+    <span class="meta">deadly {{ encounter_data.thresholds.deadly }}</span>
+  </p>
+  <p>current: <span class="pill {% if encounter_data.difficulty == 'deadly' %}danger{% elif encounter_data.difficulty == 'hard' %}warn{% else %}teal{% endif %}">{{ encounter_data.difficulty }}</span></p>
+</div>
+{% endif %}
+
+<div class="panel">
+  <h3>Spawn enemy</h3>
+  {% if monsters %}
+  <form method="post" action="/sessions/{{ gs.id }}/spawn-monster" class="inline-form" style="margin-bottom:8px">
+    <label>monster</label>
+    <select name="monster_key" style="min-width:180px">
+      {% for m in monsters %}<option value="{{ m.key }}">{{ m.name }} (CR {{ m.challenge_rating }}, HP {{ m.max_hp }}, AC {{ m.armor_class }})</option>{% endfor %}
+    </select>
+    <label>name (optional)</label><input type="text" name="custom_name" placeholder="leave blank for default" style="width:140px">
+    <label>x</label><input type="number" name="count" value="1" min="1" max="12" style="width:55px">
+    <button type="submit" class="small">spawn from catalog</button>
+  </form>
+  {% endif %}
+  <form method="post" action="/sessions/{{ gs.id }}/spawn-enemy" class="inline-form">
+    <span class="meta">custom:</span>
+    <input type="text" name="name" placeholder="custom enemy" required style="width:120px">
+    <label>HP</label><input type="number" name="max_hp" value="10">
+    <label>AC</label><input type="number" name="armor_class" value="13">
+    <label>DEX</label><input type="number" name="dexterity" value="14">
+    <button type="submit" class="small">spawn</button>
+  </form>
+  {% if objects_catalog %}
+  <form method="post" action="/sessions/{{ gs.id }}/spawn-object" class="inline-form" style="margin-top:8px">
+    <span class="meta">object:</span>
+    <select name="object_key" style="min-width:180px">
+      {% for o in objects_catalog %}<option value="{{ o.key }}">{{ o.name }} (AC {{ o.armor_class }}, HP {{ o.max_hp }})</option>{% endfor %}
+    </select>
+    <label>name (optional)</label><input type="text" name="custom_name" placeholder="leave blank for default" style="width:140px">
+    <button type="submit" class="small">spawn object</button>
+  </form>
+  {% endif %}
+  <form method="post" action="/sessions/{{ gs.id }}/generate-loot" class="inline-form" style="margin-top:8px">
+    <span class="meta">loot:</span>
+    <select name="tier">
+      <option value="1">tier 1 (CR 0-4)</option>
+      <option value="2">tier 2 (CR 5-10)</option>
+      <option value="3">tier 3 (CR 11-16)</option>
+      <option value="4">tier 4 (CR 17+)</option>
+    </select>
+    <button type="submit" class="small">generate</button>
+  </form>
+  {% if items_catalog %}
+  <form method="post" action="/sessions/{{ gs.id }}/apply-item" class="inline-form" style="margin-top:8px">
+    <span class="meta">item:</span>
+    <select name="item_key" style="min-width:200px">
+      {% for it in items_catalog %}<option value="{{ it.key }}">[{{ it.category }}] {{ it.name }} ({{ it.rarity }})</option>{% endfor %}
+    </select>
+    <label>to</label>
+    <select name="target_id">
+      {% for lc in live_characters %}<option value="{{ lc.id }}">{{ lc.name }}</option>{% endfor %}
+    </select>
+    <button type="submit" class="small">equip</button>
+  </form>
+  {% endif %}
+</div>
+
+<div class="panel">
+  <h3>Session</h3>
+  <form method="post" action="/sessions/{{ gs.id }}/end" onsubmit="return confirm('End this session? Live state will be discarded.');">
+    <button type="submit" class="danger">end session</button>
+  </form>
+</div>
+{% endif %}
+
+</div>
+<div>
+
+<div class="panel">
+  <h2>Dice</h2>
+  <form method="post" action="/sessions/{{ gs.id }}/dice/roll">
+    {% with form_id='global-dice', expression_name='expression' %}{% include "_dice_picker.html" %}{% endwith %}
+    <div class="row" style="margin-top:8px">
+      <label style="margin:0"><input type="checkbox" name="advantage" value="true"> adv</label>
+      <label style="margin:0"><input type="checkbox" name="disadvantage" value="true"> dis</label>
+      <button type="submit" class="small">roll</button>
+    </div>
+  </form>
+</div>
+
+<div class="panel">
+  <h2>Log</h2>
+  <div class="log">
+    {% for entry in gs.event_log %}
+      <div class="log-entry">
+        <span class="log-time">{{ entry.t.split('T')[1] if 'T' in entry.t else entry.t }}</span>
+        {{ entry.msg }}
+      </div>
+    {% else %}
+      <p class="meta">no events yet.</p>
+    {% endfor %}
+  </div>
+</div>
+
+</div>
+</div>
+
+{% if is_dm and active_map %}
+<script>
+(function() {
+  const SESSION_ID = {{ gs.id }};
+  const container = document.getElementById('map-container');
+  if (!container) return;
+
+  const COLS = parseInt(container.dataset.cols);
+  const ROWS = parseInt(container.dataset.rows);
+  const IMAGE_SRC = container.dataset.image;
+  let SQUARE_PX = 16;
+  let dispW = 0, dispH = 0;
+  let currentTool = 'move';
+  let lastState = null;
+  let dragToken = null;
+  let dragOffset = {x: 0, y: 0};
+  let drawing = null;
+  let dragShape = null;  // {type:'wall'|'zone', startX, startY, currentX, currentY}
+  let polyDraft = null;  // {kind:'zone'|'building', points:[[x,y],...], hover:[x,y]}
+
+  // Hex math (pointy-top, matching server's vision.py and the grid renderer).
+  const HEX_W = Math.sqrt(3) / 2;        // grid-units between hex column centers
+  const HEX_V_SPACING = 0.75;            // grid-units between hex row centers
+  function isHex() { return (lastState?.map?.grid_type || 'square') === 'hex'; }
+  function cellCenter(col, row) {
+    if (isHex()) {
+      return [col * HEX_W + HEX_W/2 + (row % 2) * HEX_W/2, row * HEX_V_SPACING + 0.5];
+    }
+    return [col + 0.5, row + 0.5];
+  }
+  function pixelToCell(fx, fy) {
+    // fx, fy in grid units. Returns nearest cell.
+    if (isHex()) {
+      let best = {x: 0, y: 0, d: Infinity};
+      for (let r = 0; r < ROWS; r++) {
+        for (let c = 0; c < COLS; c++) {
+          const cx = c * HEX_W + HEX_W/2 + (r % 2) * HEX_W/2;
+          const cy = r * HEX_V_SPACING + 0.5;
+          const d = (fx - cx) ** 2 + (fy - cy) ** 2;
+          if (d < best.d) best = {x: c, y: r, d};
+        }
+      }
+      return {x: best.x, y: best.y};
+    }
+    return {x: Math.floor(fx), y: Math.floor(fy)};
+  }
+  function hexPath(ctx, cxPx, cyPx, sizePx) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = Math.PI/2 + i * Math.PI/3;
+      const px = cxPx + sizePx * Math.cos(a);
+      const py = cyPx + sizePx * Math.sin(a);
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+  }
+
+  const ZONE_COLORS = {
+    bright: 'rgba(255,236,170,0.18)',
+    dim: 'rgba(120,140,180,0.25)',
+    dark: 'rgba(0,0,0,0.4)',
+    magical_dark: 'rgba(120,40,180,0.45)',
+    difficult: 'rgba(160,110,60,0.3)',
+    water: 'rgba(60,140,200,0.35)',
+  };
+  const ZONE_BORDER = {
+    bright: '#d4c270', dim: '#7a8aa0', dark: '#222',
+    magical_dark: '#a040d0', difficult: '#8a6a3a', water: '#4090c0',
+  };
+
+  // Tool buttons
+  document.querySelectorAll('#map-tools button[data-tool]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      currentTool = btn.dataset.tool;
+      document.querySelectorAll('#map-tools button[data-tool]').forEach(b => {
+        b.classList.toggle('secondary', b.dataset.tool !== currentTool);
+      });
+    });
+  });
+  // Set initial active style
+  document.querySelector('#map-tools button[data-tool="move"]').classList.remove('secondary');
+
+  function postJSON(url, body) {
+    return fetch(url, {method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify(body)});
+  }
+  document.getElementById('reveal-all-btn').addEventListener('click', () => postJSON(`/sessions/${SESSION_ID}/fog`, {action: 'reveal_all'}));
+  document.getElementById('clear-fog-btn').addEventListener('click', () => postJSON(`/sessions/${SESSION_ID}/fog`, {action: 'clear'}));
+  document.getElementById('clear-draw-btn').addEventListener('click', () => postJSON(`/sessions/${SESSION_ID}/draw`, {action: 'clear'}));
+  document.getElementById('clear-walls-btn').addEventListener('click', () => postJSON(`/sessions/${SESSION_ID}/walls`, {action: 'clear'}));
+  document.getElementById('clear-zones-btn').addEventListener('click', () => postJSON(`/sessions/${SESSION_ID}/zones`, {action: 'clear'}));
+
+  function build(state) {
+    container.innerHTML = '';
+    // Use viewport-based sizing so we don't depend on parent layout being final.
+    // Body padding 20 each side + panel padding 16 each side = 72 reserved horizontally.
+    const availW = Math.max(400, window.innerWidth - 72);
+    const availH = Math.max(400, Math.min(window.innerHeight * 0.78, 1000));
+    SQUARE_PX = Math.max(10, Math.min(availW / COLS, availH / ROWS));
+    dispW = Math.round(COLS * SQUARE_PX);
+    dispH = Math.round(ROWS * SQUARE_PX);
+    if (IMAGE_SRC) {
+      const img = new Image();
+      img.onload = () => layout(state, img.src);
+      img.onerror = () => layout(state, null);
+      img.src = IMAGE_SRC;
+    } else {
+      layout(state, null);
+    }
+  }
+
+  function layout(state, imgSrc) {
+    container.style.width = dispW + 'px';
+    container.style.height = dispH + 'px';
+    container.style.position = 'relative';
+    container.style.background = '#0c1115';
+    if (imgSrc) {
+      const im = document.createElement('img');
+      im.src = imgSrc;
+      im.style.width = dispW + 'px';
+      im.style.height = dispH + 'px';
+      im.style.display = 'block';
+      im.draggable = false;
+      im.style.position = 'absolute'; im.style.top='0'; im.style.left='0';
+      container.appendChild(im);
+    }
+    function makeCanvas(id) {
+      const c = document.createElement('canvas');
+      c.id = id; c.width = dispW; c.height = dispH;
+      c.style.position = 'absolute'; c.style.top = '0'; c.style.left = '0';
+      container.appendChild(c);
+      return c;
+    }
+    makeCanvas('zone-canvas');
+    makeCanvas('fog-canvas');
+    makeCanvas('wall-canvas');
+    makeCanvas('draw-canvas');
+    makeCanvas('grid-canvas');
+    makeCanvas('preview-canvas');
+
+    const tokenLayer = document.createElement('div');
+    tokenLayer.id = 'token-layer';
+    Object.assign(tokenLayer.style, {position:'absolute', top:'0', left:'0', width:dispW+'px', height:dispH+'px'});
+    container.appendChild(tokenLayer);
+
+    const interact = document.createElement('div');
+    interact.id = 'interact-layer';
+    Object.assign(interact.style, {position:'absolute', top:'0', left:'0', width:dispW+'px', height:dispH+'px', cursor:'crosshair'});
+    container.appendChild(interact);
+
+    interact.addEventListener('mousedown', onInteractDown);
+    interact.addEventListener('mousemove', onInteractMove);
+    window.addEventListener('mouseup', onInteractUp);
+
+    renderAll(state);
+  }
+
+  function renderAll(state) {
+    drawZones(document.getElementById('zone-canvas'), state);
+    drawFogDM(document.getElementById('fog-canvas'), state);
+    drawWalls(document.getElementById('wall-canvas'), state);
+    drawStrokes(document.getElementById('draw-canvas'), state);
+    drawGrid(document.getElementById('grid-canvas'), state);
+    renderTokens(document.getElementById('token-layer'), state);
+  }
+
+  function drawGrid(canvas, state) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,dispW,dispH);
+    ctx.strokeStyle = 'rgba(255,255,255,0.22)';
+    ctx.lineWidth = 1;
+    if ((state?.map?.grid_type || 'square') === 'hex') {
+      const size = SQUARE_PX / 2;
+      const hexW = Math.sqrt(3) * size;
+      const vSpacing = SQUARE_PX * 0.75;
+      for (let r = 0; r < ROWS; r++) for (let c = 0; c < COLS; c++) {
+        const cx = c * hexW + hexW/2 + (r % 2) * hexW/2;
+        const cy = r * vSpacing + size;
+        ctx.beginPath();
+        for (let i = 0; i < 6; i++) {
+          const a = Math.PI/2 + i * Math.PI/3;
+          const px = cx + size * Math.cos(a);
+          const py = cy + size * Math.sin(a);
+          if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+        }
+        ctx.closePath(); ctx.stroke();
+      }
+    } else {
+      for (let x = 0; x <= COLS; x++) { ctx.beginPath(); ctx.moveTo(x*SQUARE_PX, 0); ctx.lineTo(x*SQUARE_PX, ROWS*SQUARE_PX); ctx.stroke(); }
+      for (let y = 0; y <= ROWS; y++) { ctx.beginPath(); ctx.moveTo(0, y*SQUARE_PX); ctx.lineTo(COLS*SQUARE_PX, y*SQUARE_PX); ctx.stroke(); }
+    }
+  }
+
+  function drawFogDM(canvas, state) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,dispW,dispH);
+    const revealed = new Set((state.fog_revealed || []).map(([x,y]) => `${x},${y}`));
+    if ((state.fog_revealed || []).length === 0) return;
+    ctx.fillStyle = 'rgba(0,0,0,0.30)';
+    const hex = isHex();
+    const cellSize = hex ? SQUARE_PX / 2 : SQUARE_PX;
+    for (let y = 0; y < ROWS; y++) for (let x = 0; x < COLS; x++) {
+      if (revealed.has(`${x},${y}`)) continue;
+      if (hex) {
+        const [cx, cy] = cellCenter(x, y);
+        hexPath(ctx, cx*SQUARE_PX, cy*SQUARE_PX, cellSize);
+        ctx.fill();
+      } else {
+        ctx.fillRect(x*SQUARE_PX, y*SQUARE_PX, SQUARE_PX, SQUARE_PX);
+      }
+    }
+  }
+
+  function drawZones(canvas, state) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,dispW,dispH);
+    const zones = state.map?.zones || [];
+    for (const z of zones) {
+      ctx.fillStyle = ZONE_COLORS[z.type] || 'rgba(255,255,255,0.05)';
+      ctx.strokeStyle = ZONE_BORDER[z.type] || '#888';
+      ctx.lineWidth = 1.5;
+      if (z.shape === 'circle') {
+        ctx.beginPath();
+        ctx.arc(z.cx*SQUARE_PX, z.cy*SQUARE_PX, z.r*SQUARE_PX, 0, Math.PI*2);
+        ctx.fill();
+        ctx.stroke();
+        ctx.fillStyle = ZONE_BORDER[z.type] || '#aaa';
+        ctx.font = `${Math.max(8, SQUARE_PX*0.5)}px Inter, sans-serif`;
+        ctx.fillText(z.type, (z.cx - z.r)*SQUARE_PX + 4, (z.cy - z.r)*SQUARE_PX + 12);
+      } else if (z.shape === 'polygon') {
+        const pts = z.points || [];
+        if (pts.length >= 3) {
+          ctx.beginPath();
+          ctx.moveTo(pts[0][0]*SQUARE_PX, pts[0][1]*SQUARE_PX);
+          for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0]*SQUARE_PX, pts[i][1]*SQUARE_PX);
+          ctx.closePath();
+          ctx.fill();
+          ctx.stroke();
+          let minX = pts[0][0], minY = pts[0][1];
+          for (const p of pts) { if (p[0] < minX) minX = p[0]; if (p[1] < minY) minY = p[1]; }
+          ctx.fillStyle = ZONE_BORDER[z.type] || '#aaa';
+          ctx.font = `${Math.max(8, SQUARE_PX*0.5)}px Inter, sans-serif`;
+          ctx.fillText(z.type, minX*SQUARE_PX + 3, minY*SQUARE_PX + 12);
+        }
+      } else {
+        ctx.fillRect(z.x*SQUARE_PX, z.y*SQUARE_PX, z.w*SQUARE_PX, z.h*SQUARE_PX);
+        ctx.strokeRect(z.x*SQUARE_PX, z.y*SQUARE_PX, z.w*SQUARE_PX, z.h*SQUARE_PX);
+        ctx.fillStyle = ZONE_BORDER[z.type] || '#aaa';
+        ctx.font = `${Math.max(8, SQUARE_PX*0.5)}px Inter, sans-serif`;
+        ctx.fillText(z.type, z.x*SQUARE_PX+3, z.y*SQUARE_PX+12);
+      }
+    }
+  }
+
+  function drawWalls(canvas, state) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,dispW,dispH);
+    const walls = state.map?.walls || [];
+    ctx.strokeStyle = '#ff4d4d';
+    ctx.lineWidth = 3;
+    ctx.lineCap = 'round';
+    for (const w of walls) {
+      ctx.beginPath();
+      ctx.moveTo(w.x1*SQUARE_PX, w.y1*SQUARE_PX);
+      ctx.lineTo(w.x2*SQUARE_PX, w.y2*SQUARE_PX);
+      ctx.stroke();
+    }
+  }
+
+  function drawStrokes(canvas, state) {
+    const ctx = canvas.getContext('2d');
+    ctx.clearRect(0,0,dispW,dispH);
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    for (const stroke of (state.drawings || [])) {
+      ctx.strokeStyle = stroke.color || '#3ab5a6';
+      ctx.lineWidth = stroke.width || 3;
+      ctx.beginPath();
+      const pts = stroke.points || [];
+      for (let i = 0; i < pts.length; i++) {
+        const xx = pts[i][0] * SQUARE_PX;
+        const yy = pts[i][1] * SQUARE_PX;
+        if (i === 0) ctx.moveTo(xx, yy); else ctx.lineTo(xx, yy);
+      }
+      ctx.stroke();
+    }
+  }
+
+  function renderTokens(layer, state) {
+    layer.innerHTML = '';
+    for (const lc of state.live_characters) {
+      if (lc.x === null || lc.x === undefined || lc.y === null || lc.y === undefined) continue;
+      const t = document.createElement('div');
+      t.className = 'token ' + (lc.is_enemy ? 'enemy' : 'pc') + (lc.is_current ? ' current' : '');
+      t.dataset.lcId = lc.id;
+      const size = Math.max(20, SQUARE_PX * 0.85);
+      const [cx, cy] = cellCenter(lc.x, lc.y);
+      const leftPx = cx * SQUARE_PX - size/2;
+      const topPx = cy * SQUARE_PX - size/2;
+      t.style.cssText = `position:absolute;display:flex;align-items:center;justify-content:center;border-radius:50%;color:#fff;font-weight:700;font-size:0.85em;pointer-events:auto;cursor:grab;width:${size}px;height:${size}px;left:${leftPx}px;top:${topPx}px;background:${lc.is_enemy?'#c45a5a':'#2a9d8f'};box-shadow:0 0 0 2px rgba(0,0,0,0.6)${lc.is_current?',0 0 0 3px #ffd86b':''};${lc.current_hp !== undefined && lc.current_hp <= 0 ? 'opacity:0.4;filter:grayscale(1);' : ''}`;
+      t.title = lc.name + (lc.current_hp !== undefined ? ` (${lc.current_hp}/${lc.max_hp})` : '');
+      t.textContent = lc.name.slice(0,2).toUpperCase();
+      t.addEventListener('mousedown', e => {
+        if (currentTool !== 'move') return;
+        e.stopPropagation();
+        e.preventDefault();
+        dragToken = lc.id;
+        const rect = container.getBoundingClientRect();
+        // Track offset from cursor to token center (works for both grid types).
+        dragOffset = { x: e.clientX - rect.left - cx * SQUARE_PX, y: e.clientY - rect.top - cy * SQUARE_PX };
+        t.style.cursor = 'grabbing';
+      });
+      layer.appendChild(t);
+    }
+  }
+
+  // For tokens to receive events, set token-layer pointer-events to none and tokens themselves to auto.
+  // But we already have an interact layer above — let's set tokens to be ABOVE interact for move tool.
+  // Easier: when in move tool, set interact pointer-events: none.
+  function updateInteractMode() {
+    const interact = document.getElementById('interact-layer');
+    if (!interact) return;
+    interact.style.pointerEvents = (currentTool === 'move') ? 'none' : 'auto';
+    interact.style.cursor = currentTool === 'erase' ? 'pointer' : 'crosshair';
+  }
+  document.querySelectorAll('#map-tools button[data-tool]').forEach(btn => {
+    btn.addEventListener('click', updateInteractMode);
+  });
+
+  function pixelToFloat(e) {
+    const rect = container.getBoundingClientRect();
+    return { x: (e.clientX - rect.left) / SQUARE_PX, y: (e.clientY - rect.top) / SQUARE_PX };
+  }
+  function pixelToSquare(e) {
+    const f = pixelToFloat(e);
+    return { x: Math.floor(f.x), y: Math.floor(f.y) };
+  }
+
+  function clearPreview() {
+    const c = document.getElementById('preview-canvas');
+    if (c) c.getContext('2d').clearRect(0,0,dispW,dispH);
+  }
+
+  function drawPolyDraft() {
+    const c = document.getElementById('preview-canvas');
+    if (!c || !polyDraft) return;
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0,0,dispW,dispH);
+    const pts = polyDraft.points;
+    if (pts.length === 0) return;
+    const isZone = polyDraft.kind === 'zone';
+    if (isZone) {
+      const zoneType = document.getElementById('zone-type').value;
+      ctx.fillStyle = ZONE_COLORS[zoneType];
+      ctx.strokeStyle = ZONE_BORDER[zoneType];
+    } else {
+      ctx.strokeStyle = '#ff4d4d';
+    }
+    ctx.lineWidth = 2;
+    ctx.setLineDash([6, 4]);
+    ctx.beginPath();
+    ctx.moveTo(pts[0][0]*SQUARE_PX, pts[0][1]*SQUARE_PX);
+    for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0]*SQUARE_PX, pts[i][1]*SQUARE_PX);
+    if (polyDraft.hover) ctx.lineTo(polyDraft.hover[0]*SQUARE_PX, polyDraft.hover[1]*SQUARE_PX);
+    ctx.stroke();
+    ctx.setLineDash([]);
+    if (isZone && pts.length >= 2) {
+      ctx.beginPath();
+      ctx.moveTo(pts[0][0]*SQUARE_PX, pts[0][1]*SQUARE_PX);
+      for (let i = 1; i < pts.length; i++) ctx.lineTo(pts[i][0]*SQUARE_PX, pts[i][1]*SQUARE_PX);
+      ctx.closePath();
+      ctx.fill();
+    }
+    ctx.fillStyle = '#fff';
+    for (const p of pts) {
+      ctx.beginPath();
+      ctx.arc(p[0]*SQUARE_PX, p[1]*SQUARE_PX, 3, 0, Math.PI*2);
+      ctx.fill();
+    }
+  }
+
+  function commitPolyDraft() {
+    if (!polyDraft || polyDraft.points.length < 3) {
+      polyDraft = null;
+      clearPreview();
+      return;
+    }
+    if (polyDraft.kind === 'zone') {
+      const zt = document.getElementById('zone-type').value;
+      postJSON(`/sessions/${SESSION_ID}/zones`, {
+        action: 'add', type: zt, shape: 'polygon',
+        points: polyDraft.points,
+      });
+    } else {
+      // Building: a closed wall chain. Post each segment.
+      const pts = polyDraft.points;
+      const n = pts.length;
+      const promises = [];
+      for (let i = 0; i < n; i++) {
+        const a = pts[i], b = pts[(i+1) % n];
+        promises.push(postJSON(`/sessions/${SESSION_ID}/walls`, {
+          action: 'add', x1: a[0], y1: a[1], x2: b[0], y2: b[1],
+        }));
+      }
+      // refresh once after all done
+      Promise.all(promises).then(() => refresh());
+    }
+    polyDraft = null;
+    clearPreview();
+  }
+  function drawPreview() {
+    const c = document.getElementById('preview-canvas');
+    if (!c || !dragShape) return;
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0,0,dispW,dispH);
+    if (dragShape.type === 'wall') {
+      ctx.strokeStyle = '#ff4d4d'; ctx.lineWidth = 3; ctx.lineCap = 'round'; ctx.setLineDash([6,4]);
+      ctx.beginPath();
+      ctx.moveTo(dragShape.startX*SQUARE_PX, dragShape.startY*SQUARE_PX);
+      ctx.lineTo(dragShape.currentX*SQUARE_PX, dragShape.currentY*SQUARE_PX);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    } else if (dragShape.type === 'zone') {
+      const zoneType = document.getElementById('zone-type').value;
+      ctx.fillStyle = ZONE_COLORS[zoneType];
+      ctx.strokeStyle = ZONE_BORDER[zoneType]; ctx.lineWidth = 2; ctx.setLineDash([4,3]);
+      if (dragShape.shape === 'circle') {
+        const dx = dragShape.currentX - dragShape.startX;
+        const dy = dragShape.currentY - dragShape.startY;
+        const r = Math.sqrt(dx*dx + dy*dy);
+        ctx.beginPath();
+        ctx.arc(dragShape.startX*SQUARE_PX, dragShape.startY*SQUARE_PX, r*SQUARE_PX, 0, Math.PI*2);
+        ctx.fill();
+        ctx.stroke();
+      } else {
+        const x1 = Math.min(dragShape.startX, dragShape.currentX);
+        const y1 = Math.min(dragShape.startY, dragShape.currentY);
+        const x2 = Math.max(dragShape.startX, dragShape.currentX);
+        const y2 = Math.max(dragShape.startY, dragShape.currentY);
+        ctx.fillRect(x1*SQUARE_PX, y1*SQUARE_PX, (x2-x1)*SQUARE_PX, (y2-y1)*SQUARE_PX);
+        ctx.strokeRect(x1*SQUARE_PX, y1*SQUARE_PX, (x2-x1)*SQUARE_PX, (y2-y1)*SQUARE_PX);
+      }
+      ctx.setLineDash([]);
+    }
+  }
+
+  function onInteractDown(e) {
+    const f = pixelToFloat(e);
+    const sq = pixelToSquare(e);
+    if (activeCast) {
+      const cell = pixelToCell(f.x, f.y);
+      const form = activeCast.form;
+      const caster = (lastState?.live_characters || []).find(lc => lc.id === activeCast.casterId);
+      function setHidden(name, value) {
+        let inp = form.querySelector(`input[name=${name}]`);
+        if (!inp) {
+          inp = document.createElement('input');
+          inp.type = 'hidden'; inp.name = name;
+          form.appendChild(inp);
+        }
+        inp.value = value;
+      }
+      if (activeCast.area.shape === 'wall') {
+        // Wall: two-click flow. First click sets start point; second sets end + submits.
+        if (!activeCast.wallStart) {
+          activeCast.wallStart = { x: cell.x, y: cell.y };
+          drawAoePreview();
+          return;
+        }
+        setHidden('aoe_x', activeCast.wallStart.x);
+        setHidden('aoe_y', activeCast.wallStart.y);
+        setHidden('wall_x2', cell.x);
+        setHidden('wall_y2', cell.y);
+      } else if ((activeCast.area.shape === 'cone' || activeCast.area.shape === 'line') && caster) {
+        // origin = caster, direction snapped to 8-way from cursor
+        setHidden('aoe_x', caster.x);
+        setHidden('aoe_y', caster.y);
+        const [ccx, ccy] = cellCenter(caster.x, caster.y);
+        const ang = Math.atan2(f.y - ccy, f.x - ccx);
+        const snap = Math.round(ang / (Math.PI/4)) * (Math.PI/4);
+        setHidden('aoe_dx', Math.round(Math.cos(snap)));
+        setHidden('aoe_dy', Math.round(Math.sin(snap)));
+      } else {
+        setHidden('aoe_x', cell.x);
+        setHidden('aoe_y', cell.y);
+      }
+      const data = new FormData(form);
+      fetch(form.action, { method: 'POST', body: data, redirect: 'manual' }).then(() => location.reload());
+      exitAoeMode();
+      return;
+    }
+    if (currentTool === 'wall') {
+      const sx = Math.round(f.x), sy = Math.round(f.y);
+      dragShape = { type: 'wall', startX: sx, startY: sy, currentX: sx, currentY: sy };
+    } else if (currentTool === 'building') {
+      const px = Math.round(f.x*2)/2, py = Math.round(f.y*2)/2;
+      if (!polyDraft || polyDraft.kind !== 'building') polyDraft = { kind: 'building', points: [] };
+      polyDraft.points.push([px, py]);
+      drawPolyDraft();
+    } else if (currentTool === 'zone') {
+      const shape = document.getElementById('zone-shape').value;
+      if (shape === 'circle') {
+        dragShape = { type: 'zone', shape: 'circle', startX: f.x, startY: f.y, currentX: f.x, currentY: f.y };
+      } else if (shape === 'polygon') {
+        if (!polyDraft || polyDraft.kind !== 'zone') polyDraft = { kind: 'zone', points: [] };
+        polyDraft.points.push([f.x, f.y]);
+        drawPolyDraft();
+      } else {
+        dragShape = { type: 'zone', shape: 'rect', startX: sq.x, startY: sq.y, currentX: sq.x+1, currentY: sq.y+1 };
+      }
+    } else if (currentTool === 'erase') {
+      // Try walls first, then zones
+      postJSON(`/sessions/${SESSION_ID}/walls`, {action: 'remove_near', x: f.x, y: f.y})
+        .then(r => r.json()).then(r => {
+          if (r.count !== undefined && lastState && r.count === (lastState.map?.walls || []).length) {
+            postJSON(`/sessions/${SESSION_ID}/zones`, {action: 'remove_at', x: f.x, y: f.y});
+          }
+        });
+    } else if (currentTool === 'draw') {
+      drawing = { color: document.getElementById('draw-color').value, width: 3, points: [[f.x, f.y]] };
+    }
+  }
+
+  function onInteractMove(e) {
+    if (activeCast) {
+      const f = pixelToFloat(e);
+      const cell = pixelToCell(f.x, f.y);
+      activeCast.hoverX = cell.x;
+      activeCast.hoverY = cell.y;
+      drawAoePreview();
+      return;
+    }
+    if (polyDraft) {
+      const f = pixelToFloat(e);
+      polyDraft.hover = polyDraft.kind === 'building'
+        ? [Math.round(f.x*2)/2, Math.round(f.y*2)/2]
+        : [f.x, f.y];
+      drawPolyDraft();
+      return;
+    }
+    if (drawing) {
+      const f = pixelToFloat(e);
+      const last = drawing.points[drawing.points.length - 1];
+      if (Math.abs(f.x - last[0]) + Math.abs(f.y - last[1]) > 0.05) {
+        drawing.points.push([f.x, f.y]);
+        const dc = document.getElementById('draw-canvas');
+        if (dc) {
+          const ctx = dc.getContext('2d');
+          ctx.strokeStyle = drawing.color; ctx.lineWidth = drawing.width;
+          ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+          ctx.beginPath();
+          ctx.moveTo(last[0]*SQUARE_PX, last[1]*SQUARE_PX);
+          ctx.lineTo(f.x*SQUARE_PX, f.y*SQUARE_PX);
+          ctx.stroke();
+        }
+      }
+    } else if (dragShape) {
+      const f = pixelToFloat(e);
+      if (dragShape.type === 'wall') {
+        dragShape.currentX = Math.round(f.x);
+        dragShape.currentY = Math.round(f.y);
+      } else if (dragShape.shape === 'circle') {
+        dragShape.currentX = f.x;
+        dragShape.currentY = f.y;
+      } else {
+        dragShape.currentX = Math.max(0, Math.min(COLS, Math.round(f.x)));
+        dragShape.currentY = Math.max(0, Math.min(ROWS, Math.round(f.y)));
+      }
+      drawPreview();
+    }
+  }
+
+  function onInteractUp(e) {
+    if (dragToken !== null) {
+      const rect = container.getBoundingClientRect();
+      // dragOffset is cursor-to-token-center; new center is cursor minus that offset.
+      const newCxGrid = (e.clientX - rect.left - dragOffset.x) / SQUARE_PX;
+      const newCyGrid = (e.clientY - rect.top - dragOffset.y) / SQUARE_PX;
+      const cell = pixelToCell(newCxGrid, newCyGrid);
+      const x = Math.max(0, Math.min(COLS-1, cell.x));
+      const y = Math.max(0, Math.min(ROWS-1, cell.y));
+      postJSON(`/sessions/${SESSION_ID}/move`, {target_id: dragToken, x, y});
+      dragToken = null;
+    }
+    if (drawing && drawing.points.length > 1) {
+      postJSON(`/sessions/${SESSION_ID}/draw`, {action: 'add', ...drawing});
+    }
+    drawing = null;
+    if (dragShape) {
+      if (dragShape.type === 'wall' && (dragShape.startX !== dragShape.currentX || dragShape.startY !== dragShape.currentY)) {
+        postJSON(`/sessions/${SESSION_ID}/walls`, {action: 'add', x1: dragShape.startX, y1: dragShape.startY, x2: dragShape.currentX, y2: dragShape.currentY});
+      } else if (dragShape.type === 'zone') {
+        const zt = document.getElementById('zone-type').value;
+        if (dragShape.shape === 'circle') {
+          const dx = dragShape.currentX - dragShape.startX;
+          const dy = dragShape.currentY - dragShape.startY;
+          const r = Math.sqrt(dx*dx + dy*dy);
+          if (r > 0.3) {
+            postJSON(`/sessions/${SESSION_ID}/zones`, {action: 'add', type: zt, shape: 'circle', cx: dragShape.startX, cy: dragShape.startY, r: r});
+          }
+        } else {
+          const x1 = Math.min(dragShape.startX, dragShape.currentX);
+          const y1 = Math.min(dragShape.startY, dragShape.currentY);
+          const x2 = Math.max(dragShape.startX, dragShape.currentX);
+          const y2 = Math.max(dragShape.startY, dragShape.currentY);
+          if (x2 > x1 && y2 > y1) {
+            postJSON(`/sessions/${SESSION_ID}/zones`, {action: 'add', type: zt, shape: 'rect', x: x1, y: y1, w: x2-x1, h: y2-y1});
+          }
+        }
+      }
+      dragShape = null;
+      clearPreview();
+    }
+  }
+
+  // ---- AoE targeting mode ----
+  let activeCast = null;  // {casterId, area, rangeFt, form, hoverX, hoverY}
+
+  function feetPerSquare() { return lastState?.map?.feet_per_square || 5; }
+
+  function drawAoePreview() {
+    const c = document.getElementById('preview-canvas');
+    if (!c || !activeCast) return;
+    const ctx = c.getContext('2d');
+    ctx.clearRect(0, 0, dispW, dispH);
+    const fps = feetPerSquare();
+    // Caster position circle (range ring)
+    const caster = (lastState?.live_characters || []).find(lc => lc.id === activeCast.casterId);
+    if (caster && caster.x !== null && caster.x !== undefined && activeCast.rangeFt > 0) {
+      const [ccx, ccy] = cellCenter(caster.x, caster.y);
+      const rangePx = (activeCast.rangeFt / fps) * SQUARE_PX;
+      ctx.strokeStyle = 'rgba(58, 181, 166, 0.7)';
+      ctx.lineWidth = 1.5;
+      ctx.setLineDash([5, 4]);
+      ctx.beginPath();
+      ctx.arc(ccx*SQUARE_PX, ccy*SQUARE_PX, rangePx, 0, Math.PI*2);
+      ctx.stroke();
+      ctx.setLineDash([]);
+    }
+    if (activeCast.hoverX === undefined) return;
+    // Check if hover is within range
+    let inRange = true;
+    if (caster && caster.x !== null && activeCast.rangeFt > 0) {
+      const [ccx, ccy] = cellCenter(caster.x, caster.y);
+      const [hcx, hcy] = cellCenter(activeCast.hoverX, activeCast.hoverY);
+      const distFt = Math.hypot(hcx - ccx, hcy - ccy) * fps;
+      inRange = distFt <= activeCast.rangeFt;
+    }
+    const fill = inRange ? 'rgba(255, 100, 60, 0.30)' : 'rgba(120, 120, 120, 0.30)';
+    const stroke = inRange ? 'rgba(255, 80, 40, 0.85)' : 'rgba(120, 120, 120, 0.7)';
+    const area = activeCast.area;
+    const [hcx, hcy] = cellCenter(activeCast.hoverX, activeCast.hoverY);
+    ctx.fillStyle = fill;
+    ctx.strokeStyle = stroke;
+    ctx.lineWidth = 2;
+    if (area.shape === 'sphere') {
+      const radPx = (area.radius_ft / fps) * SQUARE_PX;
+      ctx.beginPath();
+      ctx.arc(hcx*SQUARE_PX, hcy*SQUARE_PX, radPx, 0, Math.PI*2);
+      ctx.fill(); ctx.stroke();
+    } else if (area.shape === 'cube') {
+      const sizePx = (area.size_ft / fps) * SQUARE_PX;
+      ctx.fillRect(activeCast.hoverX*SQUARE_PX, activeCast.hoverY*SQUARE_PX, sizePx, sizePx);
+      ctx.strokeRect(activeCast.hoverX*SQUARE_PX, activeCast.hoverY*SQUARE_PX, sizePx, sizePx);
+    } else if (area.shape === 'wall') {
+      // Two-click flow: before first click, no preview. After first click, line from start to hover.
+      if (activeCast.wallStart) {
+        const [sx, sy] = cellCenter(activeCast.wallStart.x, activeCast.wallStart.y);
+        ctx.lineWidth = 4;
+        ctx.beginPath();
+        ctx.moveTo(sx*SQUARE_PX, sy*SQUARE_PX);
+        ctx.lineTo(hcx*SQUARE_PX, hcy*SQUARE_PX);
+        ctx.stroke();
+        ctx.fillStyle = '#fff';
+        ctx.beginPath();
+        ctx.arc(sx*SQUARE_PX, sy*SQUARE_PX, 4, 0, Math.PI*2);
+        ctx.fill();
+      }
+    } else if (area.shape === 'cone' || area.shape === 'line') {
+      // Origin = caster cell; direction = caster -> cursor.
+      if (!caster || caster.x === null || caster.x === undefined) return;
+      const [ccx, ccy] = cellCenter(caster.x, caster.y);
+      const dx = hcx - ccx, dy = hcy - ccy;
+      const dlen = Math.hypot(dx, dy) || 1;
+      const ux = dx / dlen, uy = dy / dlen;
+      const x0 = ccx * SQUARE_PX, y0 = ccy * SQUARE_PX;
+      if (area.shape === 'cone') {
+        const lengthPx = (area.size_ft / fps) * SQUARE_PX;
+        const halfAngle = Math.PI / 4;  // 90deg cone
+        const cosH = Math.cos(halfAngle), sinH = Math.sin(halfAngle);
+        const e1x = x0 + lengthPx * (ux * cosH - uy * sinH);
+        const e1y = y0 + lengthPx * (uy * cosH + ux * sinH);
+        const e2x = x0 + lengthPx * (ux * cosH + uy * sinH);
+        const e2y = y0 + lengthPx * (uy * cosH - ux * sinH);
+        const startA = Math.atan2(e1y - y0, e1x - x0);
+        const endA = Math.atan2(e2y - y0, e2x - x0);
+        ctx.beginPath();
+        ctx.moveTo(x0, y0);
+        ctx.lineTo(e1x, e1y);
+        ctx.arc(x0, y0, lengthPx, startA, endA);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+      } else {
+        const lengthPx = (area.length_ft / fps) * SQUARE_PX;
+        const widthPx = ((area.width_ft || fps) / fps) * SQUARE_PX;
+        const px = -uy, py = ux;
+        const halfW = widthPx / 2;
+        const cs = [
+          [x0 + px*halfW, y0 + py*halfW],
+          [x0 - px*halfW, y0 - py*halfW],
+          [x0 - px*halfW + ux*lengthPx, y0 - py*halfW + uy*lengthPx],
+          [x0 + px*halfW + ux*lengthPx, y0 + py*halfW + uy*lengthPx],
+        ];
+        ctx.beginPath();
+        ctx.moveTo(cs[0][0], cs[0][1]);
+        for (let i = 1; i < 4; i++) ctx.lineTo(cs[i][0], cs[i][1]);
+        ctx.closePath();
+        ctx.fill(); ctx.stroke();
+      }
+    }
+  }
+
+  function enterAoeMode() {
+    document.body.style.cursor = 'crosshair';
+    const interact = document.getElementById('interact-layer');
+    if (interact) interact.style.pointerEvents = 'auto';
+  }
+
+  function exitAoeMode() {
+    activeCast = null;
+    document.body.style.cursor = '';
+    clearPreview();
+    updateInteractMode();
+  }
+
+  // Serialize the multi-select targets into the hidden target_ids CSV the server expects.
+  // Hide/disable the slot input when a cantrip (level 0) is selected.
+  window.prepareCastSubmit = function(form) {
+    const targetsSel = form.querySelector('.cast-targets');
+    const csv = targetsSel ? Array.from(targetsSel.selectedOptions).map(o => o.value).join(',') : '';
+    const hidden = form.querySelector('input[name="target_ids"]');
+    if (hidden) hidden.value = csv;
+    return true;
+  };
+  window.onSpellChange = function(sel) {
+    const opt = sel.selectedOptions[0];
+    if (!opt) return;
+    const isCantrip = (opt.dataset.level === '0');
+    const form = sel.closest('form');
+    const slotLabel = form.querySelector('.cast-slot-label');
+    const slotInput = form.querySelector('.cast-slot-input');
+    if (slotLabel) slotLabel.style.display = isCantrip ? 'none' : '';
+    if (slotInput) {
+      slotInput.style.display = isCantrip ? 'none' : '';
+      if (isCantrip) slotInput.value = '0';
+      else if (slotInput.value === '0') slotInput.value = opt.dataset.level || '1';
+    }
+    // Component / casting-time info next to the spell select.
+    const info = form.querySelector('.cast-spell-info');
+    if (info) {
+      const comps = opt.dataset.components || '';
+      const mat = opt.dataset.material || '';
+      const ct = opt.dataset.castingTime || 'action';
+      const range = opt.dataset.range || '0';
+      const ctLabel = ct === 'bonus_action' ? 'BA' : (ct === 'reaction' ? 'rxn' : (ct === 'action' ? 'act' : ct));
+      const compStr = comps ? comps.split('').join(' ') : '';
+      info.textContent = `${ctLabel} · range ${range}ft · ${compStr}` + (mat ? ` (${mat})` : '');
+    }
+  };
+  document.querySelectorAll('.cast-form').forEach(form => {
+    const sel = form.querySelector('.spell-select');
+    if (sel) onSpellChange(sel);
+    form.addEventListener('submit', e => {
+      if (!sel) return;
+      const opt = sel.selectedOptions[0];
+      const areaRaw = opt.dataset.area;
+      const area = (!areaRaw || areaRaw === 'null') ? null : JSON.parse(areaRaw);
+      if (!area) return;  // single-target: normal submit (target_ids already serialized)
+      const targetType = opt.dataset.targetType || '';
+      const omni = (area.shape === 'sphere' || area.shape === 'cube' || area.shape === 'circle');
+      // Self-centered omni AoE: caster is origin, no click needed — just submit.
+      if (omni && (targetType === 'self' || targetType === 'area_self')) return;
+      e.preventDefault();
+      activeCast = {
+        casterId: parseInt(form.dataset.casterId),
+        area,
+        rangeFt: parseFloat(opt.dataset.range || 0),
+        form,
+        hoverX: undefined, hoverY: undefined,
+      };
+      enterAoeMode();
+      drawAoePreview();
+    });
+  });
+
+  document.addEventListener('keydown', e => {
+    if (e.key === 'Escape') {
+      if (activeCast) exitAoeMode();
+      if (polyDraft) { polyDraft = null; clearPreview(); }
+    } else if ((e.key === 'Enter' || e.key === ' ') && polyDraft) {
+      e.preventDefault();
+      commitPolyDraft();
+    }
+  });
+
+  // dblclick to commit polygon
+  if (container) {
+    container.addEventListener('dblclick', e => {
+      if (polyDraft) { e.preventDefault(); commitPolyDraft(); }
+    });
+  }
+
+  async function refresh() {
+    const res = await fetch(`/sessions/${SESSION_ID}/state`);
+    if (!res.ok) return;
+    lastState = await res.json();
+    if (!document.getElementById('grid-canvas')) {
+      build(lastState);
+      setTimeout(updateInteractMode, 50);
+    } else {
+      renderAll(lastState);
+    }
+  }
+
+  function connectSSE() {
+    const es = new EventSource(`/sessions/${SESSION_ID}/events`);
+    es.addEventListener('state_changed', () => refresh());
+    es.onerror = () => { setTimeout(connectSSE, 2000); es.close(); };
+  }
+
+  // Re-layout when window resizes (re-builds canvases)
+  let __resizeTimer;
+  window.addEventListener('resize', () => {
+    clearTimeout(__resizeTimer);
+    __resizeTimer = setTimeout(() => {
+      if (lastState) build(lastState);
+      setTimeout(() => { renderAll(lastState); updateInteractMode(); }, 50);
+    }, 200);
+  });
+
+  if (document.readyState === 'complete') {
+    refresh();
+  } else {
+    window.addEventListener('load', refresh);
+  }
+  connectSSE();
+})();
+</script>
+{% endif %}
+{% endblock %}

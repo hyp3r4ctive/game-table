@@ -1,0 +1,244 @@
+{
+  "barbarian": {
+    "name": "Barbarian",
+    "hit_die": "d12",
+    "primary_ability": "strength",
+    "saving_throw_profs": ["strength", "constitution"],
+    "armor_profs": ["light", "medium", "shields"],
+    "weapon_profs": ["simple", "martial"],
+    "tool_profs": [],
+    "skill_choices": {"count": 2, "options": ["Animal Handling", "Athletics", "Intimidation", "Nature", "Perception", "Survival"]},
+    "starting_equipment": ["greataxe or any martial melee weapon", "two handaxes or any simple weapon", "explorer's pack", "four javelins"],
+    "spellcasting": null,
+    "features_by_level": {
+      "1": [{"name": "Rage", "description": "Bonus action: enter a rage. Advantage on Str checks/saves; bonus damage on melee Str attacks; resistance to bludgeoning, piercing, slashing. 2 uses/long rest."}, {"name": "Unarmored Defense", "description": "AC = 10 + Dex mod + Con mod when not wearing armor."}],
+      "2": [{"name": "Reckless Attack", "description": "Gain advantage on Str melee attacks this turn; attacks against you have advantage until your next turn."}, {"name": "Danger Sense", "description": "Advantage on Dex saves vs. effects you can see."}],
+      "3": [{"name": "Primal Path", "description": "Choose a subclass."}],
+      "5": [{"name": "Extra Attack", "description": "Attack twice when taking the Attack action."}, {"name": "Fast Movement", "description": "+10 ft speed when not in heavy armor."}]
+    }
+  },
+  "bard": {
+    "name": "Bard",
+    "hit_die": "d8",
+    "primary_ability": "charisma",
+    "saving_throw_profs": ["dexterity", "charisma"],
+    "armor_profs": ["light"],
+    "weapon_profs": ["simple", "hand crossbows", "longswords", "rapiers", "shortswords"],
+    "tool_profs": ["three musical instruments"],
+    "skill_choices": {"count": 3, "options": ["any"]},
+    "starting_equipment": ["rapier or longsword or any simple weapon", "diplomat's pack or entertainer's pack", "lute or any other instrument", "leather armor", "dagger"],
+    "spellcasting": {"ability": "charisma", "ritual": true, "focus": "instrument", "prepares": false, "table": "full"},
+    "features_by_level": {
+      "1": [{"name": "Spellcasting", "description": "Cha-based caster. Cantrips known: 2. Spells known: 4. Slots: 2 first-level."}, {"name": "Bardic Inspiration", "description": "Bonus action: give an ally a d6 they can add to one ability check, attack roll, or saving throw within 10 minutes. Cha mod uses/long rest."}],
+      "2": [{"name": "Jack of All Trades", "description": "Add half proficiency bonus to ability checks not already proficient."}, {"name": "Song of Rest", "description": "Allies regaining HP at end of short rest gain extra d6."}],
+      "3": [{"name": "Bard College", "description": "Choose a subclass."}, {"name": "Expertise", "description": "Double proficiency on two chosen skills."}]
+    }
+  },
+  "cleric": {
+    "name": "Cleric",
+    "hit_die": "d8",
+    "primary_ability": "wisdom",
+    "saving_throw_profs": ["wisdom", "charisma"],
+    "armor_profs": ["light", "medium", "shields"],
+    "weapon_profs": ["simple"],
+    "tool_profs": [],
+    "skill_choices": {"count": 2, "options": ["History", "Insight", "Medicine", "Persuasion", "Religion"]},
+    "starting_equipment": ["mace or warhammer (if proficient)", "scale mail or leather armor or chain mail (if proficient)", "light crossbow with 20 bolts or any simple weapon", "priest's pack or explorer's pack", "shield", "holy symbol"],
+    "spellcasting": {"ability": "wisdom", "ritual": true, "focus": "holy_symbol", "prepares": true, "table": "full"},
+    "features_by_level": {
+      "1": [{"name": "Spellcasting", "description": "Wis-based caster. Prepares Wis mod + level spells daily. Cantrips known: 3."}, {"name": "Divine Domain", "description": "Choose a subclass at level 1; grants domain spells and features."}],
+      "2": [{"name": "Channel Divinity", "description": "Use Channel Divinity (turn undead + domain option) once/short rest."}],
+      "5": [{"name": "Destroy Undead (CR 1/2)", "description": "When you turn undead, those with CR <= threshold are destroyed."}]
+    }
+  },
+  "druid": {
+    "name": "Druid",
+    "hit_die": "d8",
+    "primary_ability": "wisdom",
+    "saving_throw_profs": ["intelligence", "wisdom"],
+    "armor_profs": ["light", "medium", "shields (non-metal)"],
+    "weapon_profs": ["clubs", "daggers", "darts", "javelins", "maces", "quarterstaffs", "scimitars", "sickles", "slings", "spears"],
+    "tool_profs": ["herbalism kit"],
+    "skill_choices": {"count": 2, "options": ["Arcana", "Animal Handling", "Insight", "Medicine", "Nature", "Perception", "Religion", "Survival"]},
+    "starting_equipment": ["wooden shield or any simple weapon", "scimitar or any simple melee weapon", "leather armor", "explorer's pack", "druidic focus"],
+    "spellcasting": {"ability": "wisdom", "ritual": true, "focus": "druidic_focus", "prepares": true, "table": "full"},
+    "features_by_level": {
+      "1": [{"name": "Druidic", "description": "Secret druidic language."}, {"name": "Spellcasting", "description": "Wis-based caster. Prepares Wis mod + level spells. Cantrips known: 2."}],
+      "2": [{"name": "Wild Shape", "description": "Action: transform into a beast you've seen with CR limit. 2 uses/short rest."}, {"name": "Druid Circle", "description": "Choose a subclass."}]
+    }
+  },
+  "fighter": {
+    "name": "Fighter",
+    "hit_die": "d10",
+    "primary_ability": "strength_or_dexterity",
+    "saving_throw_profs": ["strength", "constitution"],
+    "armor_profs": ["all", "shields"],
+    "weapon_profs": ["simple", "martial"],
+    "tool_profs": [],
+    "skill_choices": {"count": 2, "options": ["Acrobatics", "Animal Handling", "Athletics", "History", "Insight", "Intimidation", "Perception", "Survival"]},
+    "starting_equipment": ["chain mail or leather + longbow + 20 arrows", "martial weapon + shield or two martial weapons", "light crossbow + 20 bolts or two handaxes", "dungeoneer's pack or explorer's pack"],
+    "spellcasting": null,
+    "features_by_level": {
+      "1": [{"name": "Fighting Style", "description": "Choose: Archery, Defense, Dueling, Great Weapon Fighting, Protection, or Two-Weapon Fighting."}, {"name": "Second Wind", "description": "Bonus action: regain 1d10 + level HP. Once/short rest."}],
+      "2": [{"name": "Action Surge", "description": "Take an additional action on your turn. Once/short rest."}],
+      "3": [{"name": "Martial Archetype", "description": "Choose a subclass."}],
+      "5": [{"name": "Extra Attack", "description": "Attack twice when taking the Attack action."}]
+    }
+  },
+  "monk": {
+    "name": "Monk",
+    "hit_die": "d8",
+    "primary_ability": "dexterity_and_wisdom",
+    "saving_throw_profs": ["strength", "dexterity"],
+    "armor_profs": [],
+    "weapon_profs": ["simple", "shortswords"],
+    "tool_profs": ["one artisan's tool or musical instrument"],
+    "skill_choices": {"count": 2, "options": ["Acrobatics", "Athletics", "History", "Insight", "Religion", "Stealth"]},
+    "starting_equipment": ["shortsword or any simple weapon", "dungeoneer's pack or explorer's pack", "ten darts"],
+    "spellcasting": null,
+    "features_by_level": {
+      "1": [{"name": "Unarmored Defense", "description": "AC = 10 + Dex mod + Wis mod."}, {"name": "Martial Arts", "description": "Use Dex for unarmed/monk weapon attacks; bonus unarmed strike; martial arts die starts at d4."}],
+      "2": [{"name": "Ki", "description": "Pool of ki points = level. Spend on Flurry of Blows, Patient Defense, Step of the Wind."}, {"name": "Unarmored Movement", "description": "+10 ft speed when unarmored."}],
+      "3": [{"name": "Monastic Tradition", "description": "Choose a subclass."}, {"name": "Deflect Missiles", "description": "Reaction: reduce ranged attack damage by 1d10 + Dex + level."}]
+    }
+  },
+  "paladin": {
+    "name": "Paladin",
+    "hit_die": "d10",
+    "primary_ability": "strength_and_charisma",
+    "saving_throw_profs": ["wisdom", "charisma"],
+    "armor_profs": ["all", "shields"],
+    "weapon_profs": ["simple", "martial"],
+    "tool_profs": [],
+    "skill_choices": {"count": 2, "options": ["Athletics", "Insight", "Intimidation", "Medicine", "Persuasion", "Religion"]},
+    "starting_equipment": ["martial weapon + shield or two martial weapons", "five javelins or any simple melee weapon", "priest's pack or explorer's pack", "chain mail", "holy symbol"],
+    "spellcasting": {"ability": "charisma", "ritual": false, "focus": "holy_symbol", "prepares": true, "table": "half", "starts_at_level": 2},
+    "features_by_level": {
+      "1": [{"name": "Divine Sense", "description": "Action: detect celestials/fiends/undead within 60 ft. 1 + Cha mod uses/long rest."}, {"name": "Lay on Hands", "description": "Pool of HP = level x 5 to heal by touch."}],
+      "2": [{"name": "Fighting Style", "description": "Choose: Defense, Dueling, Great Weapon Fighting, or Protection."}, {"name": "Spellcasting", "description": "Cha-based half-caster. Prepares Cha mod + half level spells."}, {"name": "Divine Smite", "description": "On a melee weapon hit: spend a spell slot to deal +2d8 radiant damage (+1d8 per slot above 1; +1d8 vs. undead/fiends)."}],
+      "3": [{"name": "Sacred Oath", "description": "Choose a subclass."}, {"name": "Divine Health", "description": "Immune to disease."}]
+    }
+  },
+  "ranger": {
+    "name": "Ranger",
+    "hit_die": "d10",
+    "primary_ability": "dexterity_and_wisdom",
+    "saving_throw_profs": ["strength", "dexterity"],
+    "armor_profs": ["light", "medium", "shields"],
+    "weapon_profs": ["simple", "martial"],
+    "tool_profs": [],
+    "skill_choices": {"count": 3, "options": ["Animal Handling", "Athletics", "Insight", "Investigation", "Nature", "Perception", "Stealth", "Survival"]},
+    "starting_equipment": ["scale mail or leather armor", "two shortswords or two simple melee weapons", "dungeoneer's pack or explorer's pack", "longbow + 20 arrows"],
+    "spellcasting": {"ability": "wisdom", "ritual": false, "focus": null, "prepares": false, "table": "half", "starts_at_level": 2},
+    "features_by_level": {
+      "1": [{"name": "Favored Enemy", "description": "Choose a creature type; advantage on tracking and Int checks to recall info."}, {"name": "Natural Explorer", "description": "Choose a terrain type; bonuses to navigation, foraging, and stealth there."}],
+      "2": [{"name": "Fighting Style", "description": "Choose: Archery, Defense, Dueling, or Two-Weapon Fighting."}, {"name": "Spellcasting", "description": "Wis-based half-caster. Spells known scale with level."}],
+      "3": [{"name": "Ranger Archetype", "description": "Choose a subclass."}, {"name": "Primeval Awareness", "description": "Spend a spell slot to sense favored enemies in 1-mile radius."}],
+      "5": [{"name": "Extra Attack", "description": "Attack twice when taking the Attack action."}]
+    }
+  },
+  "rogue": {
+    "name": "Rogue",
+    "hit_die": "d8",
+    "primary_ability": "dexterity",
+    "saving_throw_profs": ["dexterity", "intelligence"],
+    "armor_profs": ["light"],
+    "weapon_profs": ["simple", "hand crossbows", "longswords", "rapiers", "shortswords"],
+    "tool_profs": ["thieves' tools"],
+    "skill_choices": {"count": 4, "options": ["Acrobatics", "Athletics", "Deception", "Insight", "Intimidation", "Investigation", "Perception", "Performance", "Persuasion", "Sleight of Hand", "Stealth"]},
+    "starting_equipment": ["rapier or shortsword", "shortbow + quiver of 20 arrows or shortsword", "burglar's pack or dungeoneer's pack or explorer's pack", "leather armor", "two daggers", "thieves' tools"],
+    "spellcasting": null,
+    "features_by_level": {
+      "1": [{"name": "Expertise", "description": "Double proficiency on two chosen skills (or one skill + thieves' tools)."}, {"name": "Sneak Attack", "description": "Once/turn: extra 1d6 damage on a finesse/ranged attack with advantage or when an ally is within 5 ft of target. Scales with level."}, {"name": "Thieves' Cant", "description": "Secret thieves' language."}],
+      "2": [{"name": "Cunning Action", "description": "Bonus action: Dash, Disengage, or Hide."}],
+      "3": [{"name": "Roguish Archetype", "description": "Choose a subclass."}],
+      "5": [{"name": "Uncanny Dodge", "description": "Reaction: halve the damage from one attack you can see."}]
+    }
+  },
+  "sorcerer": {
+    "name": "Sorcerer",
+    "hit_die": "d6",
+    "primary_ability": "charisma",
+    "saving_throw_profs": ["constitution", "charisma"],
+    "armor_profs": [],
+    "weapon_profs": ["daggers", "darts", "slings", "quarterstaffs", "light crossbows"],
+    "tool_profs": [],
+    "skill_choices": {"count": 2, "options": ["Arcana", "Deception", "Insight", "Intimidation", "Persuasion", "Religion"]},
+    "starting_equipment": ["light crossbow + 20 bolts or any simple weapon", "component pouch or arcane focus", "dungeoneer's pack or explorer's pack", "two daggers"],
+    "spellcasting": {"ability": "charisma", "ritual": false, "focus": "arcane_focus", "prepares": false, "table": "full"},
+    "features_by_level": {
+      "1": [{"name": "Spellcasting", "description": "Cha-based caster. Cantrips known: 4. Spells known: 2."}, {"name": "Sorcerous Origin", "description": "Choose a subclass at level 1."}],
+      "2": [{"name": "Font of Magic", "description": "Pool of sorcery points = level. Convert between slots and points."}],
+      "3": [{"name": "Metamagic", "description": "Choose 2 metamagic options to spend sorcery points on (Twinned, Quickened, etc)."}]
+    }
+  },
+  "warlock": {
+    "name": "Warlock",
+    "hit_die": "d8",
+    "primary_ability": "charisma",
+    "saving_throw_profs": ["wisdom", "charisma"],
+    "armor_profs": ["light"],
+    "weapon_profs": ["simple"],
+    "tool_profs": [],
+    "skill_choices": {"count": 2, "options": ["Arcana", "Deception", "History", "Intimidation", "Investigation", "Nature", "Religion"]},
+    "starting_equipment": ["light crossbow + 20 bolts or any simple weapon", "component pouch or arcane focus", "scholar's pack or dungeoneer's pack", "leather armor", "any simple weapon", "two daggers"],
+    "spellcasting": {"ability": "charisma", "ritual": false, "focus": "arcane_focus", "prepares": false, "table": "warlock"},
+    "features_by_level": {
+      "1": [{"name": "Otherworldly Patron", "description": "Choose a subclass at level 1."}, {"name": "Pact Magic", "description": "Cha-based caster with short-rest slots. Cantrips known: 2. Spells known: 2. Slots: 1."}],
+      "2": [{"name": "Eldritch Invocations", "description": "Choose 2 invocations; gain more at higher levels."}],
+      "3": [{"name": "Pact Boon", "description": "Choose: Pact of the Chain, Blade, or Tome."}]
+    }
+  },
+  "wizard": {
+    "name": "Wizard",
+    "hit_die": "d6",
+    "primary_ability": "intelligence",
+    "saving_throw_profs": ["intelligence", "wisdom"],
+    "armor_profs": [],
+    "weapon_profs": ["daggers", "darts", "slings", "quarterstaffs", "light crossbows"],
+    "tool_profs": [],
+    "skill_choices": {"count": 2, "options": ["Arcana", "History", "Insight", "Investigation", "Medicine", "Religion"]},
+    "starting_equipment": ["quarterstaff or dagger", "component pouch or arcane focus", "scholar's pack or explorer's pack", "spellbook"],
+    "spellcasting": {"ability": "intelligence", "ritual": true, "focus": "arcane_focus", "prepares": true, "table": "full"},
+    "features_by_level": {
+      "1": [{"name": "Spellcasting", "description": "Int-based caster. Cantrips known: 3. Spellbook starts with 6 first-level spells; prepares Int mod + level."}, {"name": "Arcane Recovery", "description": "Once/day on a short rest: recover spell slots (level/2 rounded up) of level 5 or lower."}],
+      "2": [{"name": "Arcane Tradition", "description": "Choose a subclass."}]
+    }
+  },
+  "_full_caster_slots": {
+    "comment": "Spell slot table for full casters (bard, cleric, druid, sorcerer, wizard).",
+    "1": {"1": 2}, "2": {"1": 3}, "3": {"1": 4, "2": 2}, "4": {"1": 4, "2": 3},
+    "5": {"1": 4, "2": 3, "3": 2}, "6": {"1": 4, "2": 3, "3": 3},
+    "7": {"1": 4, "2": 3, "3": 3, "4": 1}, "8": {"1": 4, "2": 3, "3": 3, "4": 2},
+    "9": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 1}, "10": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 2},
+    "11": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 2, "6": 1}, "12": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 2, "6": 1},
+    "13": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 2, "6": 1, "7": 1}, "14": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 2, "6": 1, "7": 1},
+    "15": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 2, "6": 1, "7": 1, "8": 1}, "16": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 2, "6": 1, "7": 1, "8": 1},
+    "17": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 2, "6": 1, "7": 1, "8": 1, "9": 1}, "18": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 3, "6": 1, "7": 1, "8": 1, "9": 1},
+    "19": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 3, "6": 2, "7": 1, "8": 1, "9": 1}, "20": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 3, "6": 2, "7": 2, "8": 1, "9": 1}
+  },
+  "_half_caster_slots": {
+    "comment": "Spell slot table for half-casters (paladin, ranger). Starts at level 2.",
+    "2": {"1": 2}, "3": {"1": 3}, "4": {"1": 3}, "5": {"1": 4, "2": 2},
+    "6": {"1": 4, "2": 2}, "7": {"1": 4, "2": 3}, "8": {"1": 4, "2": 3},
+    "9": {"1": 4, "2": 3, "3": 2}, "10": {"1": 4, "2": 3, "3": 2},
+    "11": {"1": 4, "2": 3, "3": 3}, "12": {"1": 4, "2": 3, "3": 3},
+    "13": {"1": 4, "2": 3, "3": 3, "4": 1}, "14": {"1": 4, "2": 3, "3": 3, "4": 1},
+    "15": {"1": 4, "2": 3, "3": 3, "4": 2}, "16": {"1": 4, "2": 3, "3": 3, "4": 2},
+    "17": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 1}, "18": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 1},
+    "19": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 2}, "20": {"1": 4, "2": 3, "3": 3, "4": 3, "5": 2}
+  },
+  "_warlock_slots": {
+    "comment": "Pact magic: all slots same level, recovered on short rest.",
+    "1": {"slot_level": 1, "slots": 1}, "2": {"slot_level": 1, "slots": 2},
+    "3": {"slot_level": 2, "slots": 2}, "4": {"slot_level": 2, "slots": 2},
+    "5": {"slot_level": 3, "slots": 2}, "6": {"slot_level": 3, "slots": 2},
+    "7": {"slot_level": 4, "slots": 2}, "8": {"slot_level": 4, "slots": 2},
+    "9": {"slot_level": 5, "slots": 2}, "10": {"slot_level": 5, "slots": 2},
+    "11": {"slot_level": 5, "slots": 3}, "12": {"slot_level": 5, "slots": 3},
+    "13": {"slot_level": 5, "slots": 3}, "14": {"slot_level": 5, "slots": 3},
+    "15": {"slot_level": 5, "slots": 3}, "16": {"slot_level": 5, "slots": 3},
+    "17": {"slot_level": 5, "slots": 4}, "18": {"slot_level": 5, "slots": 4},
+    "19": {"slot_level": 5, "slots": 4}, "20": {"slot_level": 5, "slots": 4}
+  }
+}

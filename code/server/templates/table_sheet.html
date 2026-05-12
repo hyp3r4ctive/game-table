@@ -1,0 +1,273 @@
+{% extends "table_base.html" %}
+{% block content %}
+{% set str_mod = ((lc.strength - 10) // 2) %}
+{% set dex_mod = ((lc.dexterity - 10) // 2) %}
+{% set con_mod = ((lc.constitution - 10) // 2) %}
+{% set int_mod = ((lc.intelligence - 10) // 2) %}
+{% set wis_mod = ((lc.wisdom - 10) // 2) %}
+{% set cha_mod = ((lc.charisma - 10) // 2) %}
+{% set hp_pct = (lc.current_hp / lc.max_hp * 100) if lc.max_hp else 0 %}
+{% set is_my_turn = lc.name == (gs.initiative_order[gs.current_turn_index].name if (gs.in_combat and gs.initiative_order) else None) %}
+{% set ability_mods = {'strength': str_mod, 'dexterity': dex_mod, 'constitution': con_mod, 'intelligence': int_mod, 'wisdom': wis_mod, 'charisma': cha_mod} %}
+{% set prof_bonus = 2 + ((lc.level - 1) // 4) %}
+{% set passive_perception = 10 + wis_mod + (prof_bonus if char and 'perception' in (char.skill_profs or []) else 0) %}
+{% macro signed(n) %}{{ "+%d"|format(n) if n >= 0 else "%d"|format(n) }}{% endmacro %}
+
+<div class="panel" style="border-color: {% if is_my_turn %}#d4a017{% else %}#444{% endif %}; border-width: 2px">
+  <div class="row" style="justify-content: space-between">
+    <div>
+      <h1 style="margin-bottom: 0">{{ lc.name }}</h1>
+      <span class="meta">
+        {% if char and char.race %}{{ char.race }}{% if char.subrace %} ({{ char.subrace }}){% endif %} · {% endif %}
+        {{ lc.character_class or "adventurer" }}{% if char and char.subclass %} ({{ char.subclass }}){% endif %} · level {{ lc.level }}
+      </span>
+    </div>
+    <div class="row" style="gap: 18px">
+      <div class="center"><div class="meta">AC</div><div style="font-size: 1.8em; color: #d4a017">{{ lc.armor_class }}</div></div>
+      <div class="center"><div class="meta">SPD</div><div style="font-size: 1.4em">{{ lc.speed_ft }}</div></div>
+    </div>
+  </div>
+
+  <div style="margin-top: 12px">
+    <div class="row" style="justify-content: space-between">
+      <strong>HP</strong>
+      <span>{{ lc.current_hp }} / {{ lc.max_hp }}{% if lc.temp_hp %} (+{{ lc.temp_hp }} temp){% endif %}</span>
+    </div>
+    <div class="hp-bar"><div class="hp-fill {% if hp_pct < 30 %}low{% endif %}" style="width: {{ hp_pct }}%"></div></div>
+  </div>
+
+  {% if lc.conditions %}
+    <div class="conditions" style="margin-top: 8px">
+      conditions:
+      {% for c in lc.conditions %}{{ c.name }}{% if c.duration_rounds %} ({{ c.duration_rounds }}r){% endif %}{% if not loop.last %}, {% endif %}{% endfor %}
+    </div>
+  {% endif %}
+
+  {% if is_my_turn %}
+    <div style="margin-top: 8px; color: #d4a017; font-weight: bold">⟶ your turn</div>
+  {% elif gs.in_combat %}
+    <div class="meta" style="margin-top: 8px">round {{ gs.round_number }}</div>
+  {% endif %}
+</div>
+
+<div class="stat-grid">
+  <div class="stat-box"><div class="label">str</div><div class="score">{{ lc.strength }}</div><div class="mod">{{ "+%d"|format(str_mod) if str_mod >= 0 else "%d"|format(str_mod) }}</div></div>
+  <div class="stat-box"><div class="label">dex</div><div class="score">{{ lc.dexterity }}</div><div class="mod">{{ "+%d"|format(dex_mod) if dex_mod >= 0 else "%d"|format(dex_mod) }}</div></div>
+  <div class="stat-box"><div class="label">con</div><div class="score">{{ lc.constitution }}</div><div class="mod">{{ "+%d"|format(con_mod) if con_mod >= 0 else "%d"|format(con_mod) }}</div></div>
+  <div class="stat-box"><div class="label">int</div><div class="score">{{ lc.intelligence }}</div><div class="mod">{{ "+%d"|format(int_mod) if int_mod >= 0 else "%d"|format(int_mod) }}</div></div>
+  <div class="stat-box"><div class="label">wis</div><div class="score">{{ lc.wisdom }}</div><div class="mod">{{ "+%d"|format(wis_mod) if wis_mod >= 0 else "%d"|format(wis_mod) }}</div></div>
+  <div class="stat-box"><div class="label">cha</div><div class="score">{{ lc.charisma }}</div><div class="mod">{{ "+%d"|format(cha_mod) if cha_mod >= 0 else "%d"|format(cha_mod) }}</div></div>
+</div>
+
+{% if active_effects %}
+<div class="panel">
+  <strong>active effects</strong>
+  <div style="margin-top:6px">
+  {% for eff in active_effects %}
+    <div style="margin-bottom:6px; padding:6px 8px; background:rgba(255,255,255,0.04); border-radius:4px">
+      <div style="display:flex; justify-content:space-between; align-items:center; gap:8px">
+        <strong>{{ eff.name }}</strong>
+        <span class="meta">
+          {% if eff.is_concentration %}<span style="color:#bb87e6">conc</span>{% endif %}
+          {% if eff.duration_rounds %}{{ eff.duration_rounds }}r{% endif %}
+          {% if not eff.handler_key %}note{% endif %}
+        </span>
+      </div>
+      {% if eff.description %}<div class="meta" style="font-size:0.85em; margin-top:2px">{{ eff.description }}</div>{% endif %}
+    </div>
+  {% endfor %}
+  </div>
+</div>
+{% endif %}
+
+{% if lc.spell_slots %}
+<div class="panel">
+  <strong>spell slots:</strong>
+  {% for k, v in lc.spell_slots.items() %}<span style="margin-right: 12px">L{{ k }}: {{ v }}</span>{% endfor %}
+</div>
+{% endif %}
+
+{% if char %}
+{% set ability_pairs = [('strength','STR','str'), ('dexterity','DEX','dex'), ('constitution','CON','con'), ('intelligence','INT','int'), ('wisdom','WIS','wis'), ('charisma','CHA','cha')] %}
+<div class="panel">
+  <strong>saves</strong> · prof bonus +{{ prof_bonus }}
+  <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:6px 12px; margin-top:6px">
+    {% for ab, label, _ in ability_pairs %}
+      {% set is_prof = ab in (char.saving_throw_profs or []) %}
+      {% set total = ability_mods[ab] + (prof_bonus if is_prof else 0) %}
+      <div>{% if is_prof %}●{% else %}○{% endif %} {{ label }}: {{ signed(total) }}</div>
+    {% endfor %}
+  </div>
+</div>
+
+{% set skills = [
+  ('acrobatics','dexterity'), ('animal_handling','wisdom'), ('arcana','intelligence'),
+  ('athletics','strength'), ('deception','charisma'), ('history','intelligence'),
+  ('insight','wisdom'), ('intimidation','charisma'), ('investigation','intelligence'),
+  ('medicine','wisdom'), ('nature','intelligence'), ('perception','wisdom'),
+  ('performance','charisma'), ('persuasion','charisma'), ('religion','intelligence'),
+  ('sleight_of_hand','dexterity'), ('stealth','dexterity'), ('survival','wisdom'),
+] %}
+<div class="panel">
+  <strong>skills</strong> · passive perception {{ passive_perception }}
+  <div style="display:grid; grid-template-columns:repeat(3,1fr); gap:4px 12px; margin-top:6px; font-size:0.92em">
+    {% for skill, ab in skills %}
+      {% set is_prof = skill in (char.skill_profs or []) %}
+      {% set is_exp = skill in (char.skill_expertises or []) %}
+      {% set bonus = (prof_bonus * 2 if is_exp else (prof_bonus if is_prof else 0)) %}
+      {% set total = ability_mods[ab] + bonus %}
+      <div>
+        {% if is_exp %}◆{% elif is_prof %}●{% else %}○{% endif %}
+        {{ skill.replace('_', ' ') }} <span class="meta">({{ ab[:3] }})</span>: {{ signed(total) }}
+      </div>
+    {% endfor %}
+  </div>
+  <p class="meta" style="margin-top:6px; font-size:0.8em">◆ expertise · ● proficient · ○ untrained</p>
+</div>
+
+<div class="panel">
+  <strong>character details</strong>
+  <div style="display:grid; grid-template-columns:1fr 1fr; gap:4px 16px; margin-top:6px; font-size:0.92em">
+    <div><span class="meta">background:</span> {{ char.background or '—' }}</div>
+    <div><span class="meta">alignment:</span> {{ char.alignment or '—' }}</div>
+    <div><span class="meta">XP:</span> {{ char.experience_points }}</div>
+    <div><span class="meta">hit dice:</span> {{ char.level - char.hit_dice_used }}/{{ char.level }} {{ char.hit_die }}</div>
+    <div><span class="meta">inspiration:</span> {{ "yes" if char.inspiration else "no" }}</div>
+    <div><span class="meta">vision:</span>
+      {% if char.darkvision_ft %}darkvision {{ char.darkvision_ft }}ft{% endif %}
+      {% if char.vision_normal_ft %}{% if char.darkvision_ft %}, {% endif %}normal {{ char.vision_normal_ft }}ft{% endif %}
+      {% if not char.darkvision_ft and not char.vision_normal_ft %}—{% endif %}
+    </div>
+    <div style="grid-column:1 / -1"><span class="meta">languages:</span> {{ (char.languages or [])|join(', ') or '—' }}</div>
+    <div style="grid-column:1 / -1"><span class="meta">money:</span>
+      {% set mp = char.money or {} %}
+      {% if mp %}{% for k in ['pp','gp','ep','sp','cp'] %}{% if mp.get(k) %}{{ mp[k] }}{{ k }} {% endif %}{% endfor %}{% else %}—{% endif %}
+    </div>
+  </div>
+</div>
+
+{% if char.features %}
+<div class="panel">
+  <strong>features</strong>
+  <ul style="margin:6px 0 0 18px; padding:0; font-size:0.92em">
+    {% for f in char.features %}
+      {% if f is mapping %}
+        <li><strong>{{ f.name or f.get('label','feature') }}</strong>{% if f.description %} — <span class="meta">{{ f.description }}</span>{% endif %}</li>
+      {% else %}
+        <li>{{ f }}</li>
+      {% endif %}
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if char.equipment %}
+<div class="panel">
+  <strong>equipment</strong>
+  <ul style="margin:6px 0 0 18px; padding:0; font-size:0.92em">
+    {% for e in char.equipment %}
+      {% if e is mapping %}
+        <li>{{ e.name or e }}{% if e.qty and e.qty != 1 %} × {{ e.qty }}{% endif %}{% if e.notes %} <span class="meta">({{ e.notes }})</span>{% endif %}</li>
+      {% else %}
+        <li>{{ e }}</li>
+      {% endif %}
+    {% endfor %}
+  </ul>
+</div>
+{% endif %}
+
+{% if char.spells_known %}
+<div class="panel">
+  <strong>spells known</strong>
+  <div style="margin-top:6px; font-size:0.92em">{{ (char.spells_known or [])|join(' · ') }}</div>
+</div>
+{% endif %}
+
+{% if char.personality_traits or char.ideals or char.bonds or char.flaws %}
+<div class="panel">
+  <strong>persona</strong>
+  <div style="margin-top:6px; font-size:0.92em">
+    {% if char.personality_traits %}<div><span class="meta">traits:</span> {{ char.personality_traits }}</div>{% endif %}
+    {% if char.ideals %}<div><span class="meta">ideals:</span> {{ char.ideals }}</div>{% endif %}
+    {% if char.bonds %}<div><span class="meta">bonds:</span> {{ char.bonds }}</div>{% endif %}
+    {% if char.flaws %}<div><span class="meta">flaws:</span> {{ char.flaws }}</div>{% endif %}
+  </div>
+</div>
+{% endif %}
+
+{% if char.backstory or char.notes %}
+<div class="panel">
+  <strong>notes</strong>
+  {% if char.backstory %}<div style="margin-top:6px; font-size:0.9em; white-space:pre-wrap">{{ char.backstory }}</div>{% endif %}
+  {% if char.notes %}<div style="margin-top:6px; font-size:0.9em; white-space:pre-wrap">{{ char.notes }}</div>{% endif %}
+</div>
+{% endif %}
+{% endif %}
+
+<div class="panel">
+  <strong>party</strong>
+  <table>
+    <tr><th>name</th><th>HP</th><th>conditions</th></tr>
+    {% for other in live_characters %}
+      {% if not other.is_enemy %}
+        {% set other_pct = (other.current_hp / other.max_hp * 100) if other.max_hp else 0 %}
+        <tr>
+          <td>{{ other.name }}{% if other.id == lc.id %} <span class="meta">(you)</span>{% endif %}</td>
+          <td>
+            <div style="width: 80px; display: inline-block; vertical-align: middle">
+              <div class="hp-bar"><div class="hp-fill {% if other_pct < 30 %}low{% endif %}" style="width: {{ other_pct }}%"></div></div>
+            </div>
+            <span class="meta">{{ other.current_hp }}/{{ other.max_hp }}</span>
+          </td>
+          <td class="conditions">
+            {% for c in other.conditions %}{{ c.name }}{% if not loop.last %}, {% endif %}{% endfor %}
+          </td>
+        </tr>
+      {% endif %}
+    {% endfor %}
+  </table>
+</div>
+
+{% set has_enemies = false %}
+{% for other in live_characters %}{% if other.is_enemy %}{% set has_enemies = true %}{% endif %}{% endfor %}
+{% if has_enemies %}
+<div class="panel">
+  <strong>enemies</strong>
+  <table>
+    <tr><th>name</th><th>status</th><th>conditions</th></tr>
+    {% for other in live_characters %}
+      {% if other.is_enemy %}
+        {% set other_pct = (other.current_hp / other.max_hp * 100) if other.max_hp else 0 %}
+        {% set status = "healthy" %}
+        {% if other.current_hp <= 0 %}{% set status = "down" %}
+        {% elif other_pct < 25 %}{% set status = "near death" %}
+        {% elif other_pct < 50 %}{% set status = "bloodied" %}
+        {% elif other_pct < 90 %}{% set status = "wounded" %}
+        {% endif %}
+        <tr>
+          <td>{{ other.name }}</td>
+          <td>{{ status }}</td>
+          <td class="conditions">{% for c in other.conditions %}{{ c.name }}{% if not loop.last %}, {% endif %}{% endfor %}</td>
+        </tr>
+      {% endif %}
+    {% endfor %}
+  </table>
+</div>
+{% endif %}
+
+<form method="post" action="/table/seat/{{ seat }}/release" style="margin-top: 16px">
+  <button type="submit" style="background: #444; color: #ccc; padding: 6px 12px; font-size: 0.85em">release seat</button>
+</form>
+
+<script>
+(function() {
+  const SESSION_ID = {{ gs.id }};
+  function connect() {
+    const es = new EventSource(`/sessions/${SESSION_ID}/events`);
+    es.addEventListener('state_changed', () => location.reload());
+    es.onerror = () => { setTimeout(connect, 2000); es.close(); };
+  }
+  connect();
+})();
+</script>
+{% endblock %}

@@ -1,0 +1,91 @@
+{# Reusable structured dice picker. Pass: form_id (unique), expression_name (form field name for the built expression). #}
+<div class="dice-picker" data-form-id="{{ form_id }}" data-expr-name="{{ expression_name }}">
+  <div class="dice-rows" id="{{ form_id }}-rows">
+    <div class="dice-row">
+      <input type="number" min="1" max="20" value="1" class="dice-count" style="width:55px">
+      <select class="dice-die">
+        <option value="d4">d4</option>
+        <option value="d6">d6</option>
+        <option value="d8">d8</option>
+        <option value="d10">d10</option>
+        <option value="d12">d12</option>
+        <option value="d20" selected>d20</option>
+        <option value="d100">d100</option>
+      </select>
+      <button type="button" class="secondary small dice-remove" onclick="removeDiceRow(this)">×</button>
+    </div>
+  </div>
+  <div class="row" style="gap:6px; margin-top:4px">
+    <button type="button" class="secondary small" onclick="addDiceRow('{{ form_id }}')">+ add die</button>
+    <span style="color:var(--text-faint)">mod</span>
+    <input type="number" value="0" class="dice-modifier" id="{{ form_id }}-mod" style="width:60px">
+  </div>
+  <input type="hidden" name="{{ expression_name }}" id="{{ form_id }}-expr">
+</div>
+
+<script>
+  if (typeof window.__dicePickerInit === 'undefined') {
+    window.__dicePickerInit = true;
+    window.addDiceRow = function(formId) {
+      const rows = document.getElementById(formId + '-rows');
+      const r = document.createElement('div');
+      r.className = 'dice-row';
+      r.innerHTML = `
+        <input type="number" min="1" max="20" value="1" class="dice-count" style="width:55px">
+        <select class="dice-die">
+          <option value="d4">d4</option><option value="d6">d6</option><option value="d8">d8</option>
+          <option value="d10">d10</option><option value="d12">d12</option><option value="d20">d20</option>
+        </select>
+        <button type="button" class="secondary small dice-remove" onclick="removeDiceRow(this)">×</button>
+      `;
+      rows.appendChild(r);
+      attachDiceListeners(rows.parentElement);
+    };
+    window.removeDiceRow = function(btn) {
+      const picker = btn.closest('.dice-picker');
+      const rows = btn.closest('.dice-rows');
+      if (rows.children.length > 1) {
+        btn.closest('.dice-row').remove();
+        rebuildDiceExpression(picker);
+      }
+    };
+    window.rebuildDiceExpression = function(picker) {
+      const rows = picker.querySelectorAll('.dice-row');
+      const groups = {};
+      rows.forEach(r => {
+        const cnt = parseInt(r.querySelector('.dice-count').value) || 1;
+        const die = r.querySelector('.dice-die').value;
+        groups[die] = (groups[die] || 0) + cnt;
+      });
+      const parts = Object.entries(groups).map(([d, c]) => `${c}${d}`);
+      const mod = parseInt(picker.querySelector('.dice-modifier').value) || 0;
+      let expr = parts.join('+');
+      if (mod !== 0) expr += (mod > 0 ? '+' : '') + mod;
+      picker.querySelector('input[type="hidden"]').value = expr;
+    };
+    window.attachDiceListeners = function(picker) {
+      picker.querySelectorAll('.dice-count, .dice-die, .dice-modifier').forEach(el => {
+        el.removeEventListener('input', el.__diceHandler || (() => {}));
+        el.__diceHandler = () => rebuildDiceExpression(picker);
+        el.addEventListener('input', el.__diceHandler);
+        el.addEventListener('change', el.__diceHandler);
+      });
+    };
+    document.addEventListener('DOMContentLoaded', () => {
+      document.querySelectorAll('.dice-picker').forEach(p => {
+        attachDiceListeners(p);
+        rebuildDiceExpression(p);
+      });
+      document.querySelectorAll('form').forEach(f => {
+        f.addEventListener('submit', () => {
+          f.querySelectorAll('.dice-picker').forEach(p => rebuildDiceExpression(p));
+        });
+      });
+    });
+  }
+</script>
+
+<style>
+  .dice-row { display: flex; gap: 6px; margin-bottom: 4px; align-items: center; }
+  .dice-row select, .dice-row input { margin-bottom: 0; }
+</style>

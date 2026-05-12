@@ -1,0 +1,140 @@
+{
+  "dwarf": {
+    "name": "Dwarf",
+    "size": "medium",
+    "speed_ft": 25,
+    "darkvision_ft": 60,
+    "ability_bonuses": {"constitution": 2},
+    "languages": ["Common", "Dwarvish"],
+    "traits": [
+      {"name": "Darkvision", "description": "60 ft."},
+      {"name": "Dwarven Resilience", "description": "Advantage on saves vs. poison; resistance to poison damage."},
+      {"name": "Dwarven Combat Training", "description": "Proficiency with battleaxe, handaxe, light hammer, warhammer."},
+      {"name": "Tool Proficiency", "description": "One artisan's tool: smith, brewer, or mason."},
+      {"name": "Stonecunning", "description": "Add double proficiency on History checks related to stonework."}
+    ],
+    "subraces": {
+      "hill_dwarf": {"name": "Hill Dwarf", "ability_bonuses": {"wisdom": 1}, "traits": [{"name": "Dwarven Toughness", "description": "+1 max HP per level."}]},
+      "mountain_dwarf": {"name": "Mountain Dwarf", "ability_bonuses": {"strength": 2}, "traits": [{"name": "Dwarven Armor Training", "description": "Proficiency with light and medium armor."}]}
+    }
+  },
+  "elf": {
+    "name": "Elf",
+    "size": "medium",
+    "speed_ft": 30,
+    "darkvision_ft": 60,
+    "ability_bonuses": {"dexterity": 2},
+    "languages": ["Common", "Elvish"],
+    "traits": [
+      {"name": "Darkvision", "description": "60 ft."},
+      {"name": "Keen Senses", "description": "Proficiency in Perception."},
+      {"name": "Fey Ancestry", "description": "Advantage on saves vs. charmed; magic can't put you to sleep."},
+      {"name": "Trance", "description": "4 hours of meditation = 8 hours of sleep."}
+    ],
+    "subraces": {
+      "high_elf": {"name": "High Elf", "ability_bonuses": {"intelligence": 1}, "traits": [{"name": "Elf Weapon Training", "description": "Proficiency with longsword, shortsword, longbow, shortbow."}, {"name": "Cantrip", "description": "One wizard cantrip; Intelligence is the spellcasting ability."}, {"name": "Extra Language", "description": "One additional language of your choice."}]},
+      "wood_elf": {"name": "Wood Elf", "ability_bonuses": {"wisdom": 1}, "traits": [{"name": "Elf Weapon Training", "description": "Proficiency with longsword, shortsword, longbow, shortbow."}, {"name": "Fleet of Foot", "description": "Speed increases to 35 ft."}, {"name": "Mask of the Wild", "description": "Hide when only lightly obscured by natural phenomena."}]},
+      "drow": {"name": "Drow (Dark Elf)", "ability_bonuses": {"charisma": 1}, "traits": [{"name": "Superior Darkvision", "description": "120 ft."}, {"name": "Sunlight Sensitivity", "description": "Disadvantage on attacks and Perception in direct sunlight."}, {"name": "Drow Magic", "description": "Dancing lights cantrip; faerie fire at level 3; darkness at level 5."}, {"name": "Drow Weapon Training", "description": "Proficiency with rapier, shortsword, hand crossbow."}]}
+    }
+  },
+  "halfling": {
+    "name": "Halfling",
+    "size": "small",
+    "speed_ft": 25,
+    "darkvision_ft": 0,
+    "ability_bonuses": {"dexterity": 2},
+    "languages": ["Common", "Halfling"],
+    "traits": [
+      {"name": "Lucky", "description": "Reroll natural 1s on attack rolls, ability checks, and saves."},
+      {"name": "Brave", "description": "Advantage on saves vs. frightened."},
+      {"name": "Halfling Nimbleness", "description": "Move through the space of any creature larger than you."}
+    ],
+    "subraces": {
+      "lightfoot": {"name": "Lightfoot", "ability_bonuses": {"charisma": 1}, "traits": [{"name": "Naturally Stealthy", "description": "Hide behind a creature one size larger than you."}]},
+      "stout": {"name": "Stout", "ability_bonuses": {"constitution": 1}, "traits": [{"name": "Stout Resilience", "description": "Advantage on saves vs. poison; resistance to poison damage."}]}
+    }
+  },
+  "human": {
+    "name": "Human",
+    "size": "medium",
+    "speed_ft": 30,
+    "darkvision_ft": 0,
+    "ability_bonuses": {"strength": 1, "dexterity": 1, "constitution": 1, "intelligence": 1, "wisdom": 1, "charisma": 1},
+    "languages": ["Common", "one extra of choice"],
+    "traits": [],
+    "subraces": {}
+  },
+  "dragonborn": {
+    "name": "Dragonborn",
+    "size": "medium",
+    "speed_ft": 30,
+    "darkvision_ft": 0,
+    "ability_bonuses": {"strength": 2, "charisma": 1},
+    "languages": ["Common", "Draconic"],
+    "traits": [
+      {"name": "Draconic Ancestry", "description": "Choose a dragon ancestry; determines breath weapon damage type and resistance."},
+      {"name": "Breath Weapon", "description": "Action: 15-ft cone or 30-ft line; targets make a save (DC 8 + Con + prof); 2d6 damage at level 1, scaling with level. Recharges on short/long rest."},
+      {"name": "Damage Resistance", "description": "Resistance to the damage type of your draconic ancestry."}
+    ],
+    "subraces": {}
+  },
+  "gnome": {
+    "name": "Gnome",
+    "size": "small",
+    "speed_ft": 25,
+    "darkvision_ft": 60,
+    "ability_bonuses": {"intelligence": 2},
+    "languages": ["Common", "Gnomish"],
+    "traits": [
+      {"name": "Darkvision", "description": "60 ft."},
+      {"name": "Gnome Cunning", "description": "Advantage on Int, Wis, Cha saves vs. magic."}
+    ],
+    "subraces": {
+      "forest_gnome": {"name": "Forest Gnome", "ability_bonuses": {"dexterity": 1}, "traits": [{"name": "Natural Illusionist", "description": "Minor illusion cantrip; Intelligence is the spellcasting ability."}, {"name": "Speak with Small Beasts", "description": "Communicate simple ideas with Small or smaller beasts."}]},
+      "rock_gnome": {"name": "Rock Gnome", "ability_bonuses": {"constitution": 1}, "traits": [{"name": "Artificer's Lore", "description": "Double proficiency on History checks related to magical, alchemical, or technological items."}, {"name": "Tinker", "description": "Proficiency with tinker's tools; build small clockwork devices."}]}
+    }
+  },
+  "half_elf": {
+    "name": "Half-Elf",
+    "size": "medium",
+    "speed_ft": 30,
+    "darkvision_ft": 60,
+    "ability_bonuses": {"charisma": 2, "two_others_plus_1": true},
+    "languages": ["Common", "Elvish", "one extra of choice"],
+    "traits": [
+      {"name": "Darkvision", "description": "60 ft."},
+      {"name": "Fey Ancestry", "description": "Advantage on saves vs. charmed; magic can't put you to sleep."},
+      {"name": "Skill Versatility", "description": "Proficiency in two skills of your choice."}
+    ],
+    "subraces": {}
+  },
+  "half_orc": {
+    "name": "Half-Orc",
+    "size": "medium",
+    "speed_ft": 30,
+    "darkvision_ft": 60,
+    "ability_bonuses": {"strength": 2, "constitution": 1},
+    "languages": ["Common", "Orc"],
+    "traits": [
+      {"name": "Darkvision", "description": "60 ft."},
+      {"name": "Menacing", "description": "Proficiency in Intimidation."},
+      {"name": "Relentless Endurance", "description": "When reduced to 0 HP, drop to 1 HP instead. Once per long rest."},
+      {"name": "Savage Attacks", "description": "On a melee crit, roll one extra weapon damage die."}
+    ],
+    "subraces": {}
+  },
+  "tiefling": {
+    "name": "Tiefling",
+    "size": "medium",
+    "speed_ft": 30,
+    "darkvision_ft": 60,
+    "ability_bonuses": {"intelligence": 1, "charisma": 2},
+    "languages": ["Common", "Infernal"],
+    "traits": [
+      {"name": "Darkvision", "description": "60 ft."},
+      {"name": "Hellish Resistance", "description": "Resistance to fire damage."},
+      {"name": "Infernal Legacy", "description": "Thaumaturgy cantrip; hellish rebuke at level 3; darkness at level 5. Charisma is the spellcasting ability."}
+    ],
+    "subraces": {}
+  }
+}

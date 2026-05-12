@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block content %}
+<h1>Browse Campaigns</h1>
+
+<div class="panel">
+    {% for c in campaigns %}
+        <div class="creature">
+            <div>
+                <strong>{{ c.name }}</strong>
+                {% if c.is_one_shot %}<span class="status">one-shot</span>{% endif %}
+                <br>
+                <small>DM: {{ dm_users[c.id].username }}</small>
+                {% if c.description %}<br><em>{{ c.description }}</em>{% endif %}
+            </div>
+            <div>
+                {% if c.id in member_campaign_ids %}
+                    <a href="/campaigns/{{ c.id }}">view</a>
+                {% elif c.id in pending_campaign_ids %}
+                    <span>request pending</span>
+                {% else %}
+                    <a href="/campaigns/{{ c.id }}/request">request to join</a>
+                {% endif %}
+            </div>
+        </div>
+    {% else %}
+        <p>No campaigns yet.</p>
+    {% endfor %}
+</div>
+{% endblock %}

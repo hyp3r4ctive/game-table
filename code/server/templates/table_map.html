@@ -1,0 +1,211 @@
+{% extends "table_base.html" %}
+{% block content %}
+<div id="map-host" data-session-id="{{ gs.id }}" style="width:100%; height:calc(100vh - 90px); position:relative; background:#0c1115; border:1px solid var(--border); border-radius:8px; overflow:hidden">
+  <div id="waiting" style="display:flex; align-items:center; justify-content:center; height:100%; color:var(--text-faint)">no map active</div>
+</div>
+<script>
+(function() {
+  const SESSION_ID = parseInt(document.getElementById('map-host').dataset.sessionId);
+  const PERSPECTIVE = 'party';
+  let SQUARE_PX = 30;
+  let cols = 0, rows = 0;
+  let GRID_TYPE = 'square';
+  let FEET_PER_SQUARE = 5;
+
+  const HEX_W = Math.sqrt(3) / 2;
+  const HEX_V_SPACING = 0.75;
+  function isHex() { return GRID_TYPE === 'hex'; }
+  function cellCenter(col, row) {
+    if (isHex()) return [col*HEX_W + HEX_W/2 + (row%2)*HEX_W/2, row*HEX_V_SPACING + 0.5];
+    return [col + 0.5, row + 0.5];
+  }
+  function hexPath(ctx, cxPx, cyPx, sizePx) {
+    ctx.beginPath();
+    for (let i = 0; i < 6; i++) {
+      const a = Math.PI/2 + i * Math.PI/3;
+      const px = cxPx + sizePx * Math.cos(a);
+      const py = cyPx + sizePx * Math.sin(a);
+      if (i === 0) ctx.moveTo(px, py); else ctx.lineTo(px, py);
+    }
+    ctx.closePath();
+  }
+  const ZONE_COLORS = {
+    bright: 'rgba(255,236,170,0.20)', dim: 'rgba(140,150,180,0.30)',
+    dark: 'rgba(0,0,0,0.40)', magical_dark: 'rgba(120,40,180,0.50)',
+    difficult: 'rgba(160,110,60,0.30)', water: 'rgba(60,140,200,0.40)',
+  };
+
+  async function fetchState() {
+    const res = await fetch(`/sessions/${SESSION_ID}/state?perspective=${PERSPECTIVE}`);
+    if (!res.ok) return null;
+    return await res.json();
+  }
+
+  function makeCanvas(parent, id, w, h) {
+    const c = document.createElement('canvas');
+    c.id = id; c.width = w; c.height = h;
+    c.style.position = 'absolute'; c.style.top = '0'; c.style.left = '0';
+    parent.appendChild(c);
+    return c;
+  }
+
+  async function render() {
+    const state = await fetchState();
+    const host = document.getElementById('map-host');
+    if (!state || !state.map) {
+      host.innerHTML = '<div style="display:flex; align-items:center; justify-content:center; height:100%; color:var(--text-faint)">no map active</div>';
+      return;
+    }
+    cols = state.map.grid_cols;
+    rows = state.map.grid_rows;
+    GRID_TYPE = state.map.grid_type || 'square';
+    FEET_PER_SQUARE = state.map.feet_per_square || 5;
+
+    const availW = host.clientWidth;
+    const availH = host.clientHeight;
+    SQUARE_PX = Math.min(availW / cols, availH / rows);
+    const dispW = cols * SQUARE_PX, dispH = rows * SQUARE_PX;
+
+    host.innerHTML = '';
+    const wrap = document.createElement('div');
+    wrap.style.cssText = `position:relative; width:${dispW}px; height:${dispH}px; margin:auto`;
+    if (state.map.image_path) {
+      const im = document.createElement('img');
+      im.src = state.map.image_path;
+      im.style.cssText = `position:absolute; top:0; left:0; width:${dispW}px; height:${dispH}px`;
+      im.draggable = false;
+      wrap.appendChild(im);
+    } else {
+      wrap.style.background = '#1a1f24';
+    }
+    host.appendChild(wrap);
+
+    const zoneC = makeCanvas(wrap, 'tm-zone', dispW, dispH);
+    const wallC = makeCanvas(wrap, 'tm-wall', dispW, dispH);
+    const fogC = makeCanvas(wrap, 'tm-fog', dispW, dispH);
+    const gridC = makeCanvas(wrap, 'tm-grid', dispW, dispH);
+
+    // Zones
+    const zctx = zoneC.getContext('2d');
+    for (const z of (state.map.zones || [])) {
+      zctx.fillStyle = ZONE_COLORS[z.type] || 'rgba(255,255,255,0.05)';
+      if (z.shape === 'circle') {
+        zctx.beginPath(); zctx.arc(z.cx*SQUARE_PX, z.cy*SQUARE_PX, z.r*SQUARE_PX, 0, Math.PI*2); zctx.fill();
+      } else if (z.shape === 'polygon') {
+        const pts = z.points || [];
+        if (pts.length >= 3) {
+          zctx.beginPath();
+          zctx.moveTo(pts[0][0]*SQUARE_PX, pts[0][1]*SQUARE_PX);
+          for (let i = 1; i < pts.length; i++) zctx.lineTo(pts[i][0]*SQUARE_PX, pts[i][1]*SQUARE_PX);
+          zctx.closePath(); zctx.fill();
+        }
+      } else {
+        zctx.fillRect(z.x*SQUARE_PX, z.y*SQUARE_PX, z.w*SQUARE_PX, z.h*SQUARE_PX);
+      }
+    }
+
+    // Walls
+    const wctx = wallC.getContext('2d');
+    wctx.strokeStyle = '#1a1a1a'; wctx.lineWidth = Math.max(2, SQUARE_PX*0.12); wctx.lineCap = 'round';
+    for (const w of (state.map.walls || [])) {
+      wctx.beginPath();
+      wctx.moveTo(w.x1*SQUARE_PX, w.y1*SQUARE_PX);
+      wctx.lineTo(w.x2*SQUARE_PX, w.y2*SQUARE_PX);
+      wctx.stroke();
+    }
+
+    // Fog
+    const fctx = fogC.getContext('2d');
+    const explored = new Set((state.fog_revealed || []).map(([x,y]) => `${x},${y}`));
+    const visible = new Set((state.currently_visible || []).map(([x,y]) => `${x},${y}`));
+    const hex = isHex();
+    const hexSize = SQUARE_PX / 2;
+    for (let y = 0; y < rows; y++) for (let x = 0; x < cols; x++) {
+      const key = `${x},${y}`;
+      if (visible.has(key)) continue;
+      fctx.fillStyle = explored.has(key) ? 'rgba(20, 25, 30, 0.50)' : 'rgba(10, 12, 15, 0.92)';
+      if (hex) {
+        const [cx, cy] = cellCenter(x, y);
+        hexPath(fctx, cx*SQUARE_PX, cy*SQUARE_PX, hexSize);
+        fctx.fill();
+      } else {
+        fctx.fillRect(x*SQUARE_PX, y*SQUARE_PX, SQUARE_PX, SQUARE_PX);
+      }
+    }
+
+    // Grid
+    const gctx = gridC.getContext('2d');
+    gctx.strokeStyle = 'rgba(255,255,255,0.18)'; gctx.lineWidth = 1;
+    if (hex) {
+      for (let r = 0; r < rows; r++) for (let c = 0; c < cols; c++) {
+        const [cgx, cgy] = cellCenter(c, r);
+        hexPath(gctx, cgx*SQUARE_PX, cgy*SQUARE_PX, hexSize);
+        gctx.stroke();
+      }
+    } else {
+      for (let x = 0; x <= cols; x++) { gctx.beginPath(); gctx.moveTo(x*SQUARE_PX, 0); gctx.lineTo(x*SQUARE_PX, rows*SQUARE_PX); gctx.stroke(); }
+      for (let y = 0; y <= rows; y++) { gctx.beginPath(); gctx.moveTo(0, y*SQUARE_PX); gctx.lineTo(cols*SQUARE_PX, y*SQUARE_PX); gctx.stroke(); }
+    }
+
+    // Pending walk overlay
+    const pw = state.pending_walk;
+    if (pw && pw.path && pw.path.length && pw.from) {
+      const pathC = makeCanvas(wrap, 'tm-path', dispW, dispH);
+      const pctx = pathC.getContext('2d');
+      pctx.strokeStyle = 'rgba(255, 220, 100, 0.9)';
+      pctx.lineWidth = Math.max(3, SQUARE_PX * 0.14);
+      pctx.lineCap = 'round'; pctx.lineJoin = 'round';
+      const [sx, sy] = cellCenter(pw.from[0], pw.from[1]);
+      pctx.beginPath();
+      pctx.moveTo(sx*SQUARE_PX, sy*SQUARE_PX);
+      for (const p of pw.path) {
+        const [px, py] = cellCenter(p[0], p[1]);
+        pctx.lineTo(px*SQUARE_PX, py*SQUARE_PX);
+      }
+      pctx.stroke();
+      pctx.fillStyle = '#ffd86b';
+      for (const p of pw.path) {
+        const [px, py] = cellCenter(p[0], p[1]);
+        pctx.beginPath();
+        pctx.arc(px*SQUARE_PX, py*SQUARE_PX, Math.max(2, SQUARE_PX * 0.10), 0, Math.PI*2);
+        pctx.fill();
+      }
+      const last = pw.path[pw.path.length - 1];
+      const [lx, ly] = cellCenter(last[0], last[1]);
+      pctx.fillStyle = '#fff';
+      pctx.font = `bold ${Math.max(12, Math.round(SQUARE_PX * 0.5))}px sans-serif`;
+      pctx.textAlign = 'center'; pctx.textBaseline = 'middle';
+      pctx.strokeStyle = 'rgba(0,0,0,0.85)'; pctx.lineWidth = 4;
+      const txt = `${pw.cost_ft || 0} ft`;
+      const tx = lx*SQUARE_PX, ty = ly*SQUARE_PX - SQUARE_PX*0.7;
+      pctx.strokeText(txt, tx, ty);
+      pctx.fillText(txt, tx, ty);
+    }
+
+    // Tokens
+    const tokenLayer = document.createElement('div');
+    tokenLayer.style.cssText = `position:absolute; top:0; left:0; width:${dispW}px; height:${dispH}px; pointer-events:none`;
+    wrap.appendChild(tokenLayer);
+    for (const lc of state.live_characters) {
+      if (lc.x === null || lc.x === undefined) continue;
+      const t = document.createElement('div');
+      const size = Math.max(18, SQUARE_PX * 0.85);
+      const [cx, cy] = cellCenter(lc.x, lc.y);
+      t.style.cssText = `position:absolute; display:flex; align-items:center; justify-content:center; border-radius:50%; color:#fff; font-weight:700; font-size:0.85em; width:${size}px; height:${size}px; left:${cx*SQUARE_PX - size/2}px; top:${cy*SQUARE_PX - size/2}px; background:${lc.is_enemy?'#c45a5a':'#2a9d8f'}; box-shadow:0 0 0 2px rgba(0,0,0,0.6)${lc.is_current?',0 0 0 3px #ffd86b':''}; ${lc.current_hp !== undefined && lc.current_hp <= 0 ? 'opacity:0.4;filter:grayscale(1);' : ''}`;
+      t.textContent = lc.name.slice(0,2).toUpperCase();
+      tokenLayer.appendChild(t);
+    }
+  }
+
+  function connectSSE() {
+    const es = new EventSource(`/sessions/${SESSION_ID}/events`);
+    es.addEventListener('state_changed', () => render());
+    es.onerror = () => { setTimeout(connectSSE, 2000); es.close(); };
+  }
+
+  window.addEventListener('resize', () => render());
+  render();
+  connectSSE();
+})();
+</script>
+{% endblock %}

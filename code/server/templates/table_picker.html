@@ -1,0 +1,20 @@
+{% extends "table_base.html" %}
+{% block content %}
+<h1>{{ campaign.name }}</h1>
+<p class="meta">who's at seat {{ seat }}?</p>
+
+{% if available %}
+  {% for lc in available %}
+    <div class="big-card">
+      <form method="post" action="/table/seat/{{ seat }}/claim">
+        <input type="hidden" name="live_character_id" value="{{ lc.id }}">
+        <button type="submit">{{ lc.name }}{% if lc.character_class %} — {{ lc.character_class }} L{{ lc.level }}{% endif %}</button>
+      </form>
+    </div>
+  {% endfor %}
+{% else %}
+  <div class="panel center">
+    <p>no available characters. all seats may be claimed.</p>
+  </div>
+{% endif %}
+{% endblock %}
