@@ -33,6 +33,11 @@ in design, CAD in progress, website core game engine pre-alpha
 - `electronics/` - schematics and wiring
 - `reference/` - datasheets and manuals
 
-## CAD Model (8/8/26)
+## CAD Model (8/18/26)
 
-<img width="2333" height="1242" alt="DNDTable" src="https://github.com/user-attachments/assets/6cee0a0b-7de4-4795-ad9d-b51bc6a15cd5" />
+DND Table:
+<img width="2046" height="1242" alt="DNDISO1" src="https://github.com/user-attachments/assets/310fa8fe-2804-4682-b2b2-c25623547c34" />
+Pool Table:
+<img width="2046" height="1242" alt="POOLISO" src="https://github.com/user-attachments/assets/283df29d-7233-4dd9-b029-45259862d069" />
+Flush Tabletop:
+<img width="2046" height="1242" alt="TABLEISO" src="https://github.com/user-attachments/assets/25798e5f-f24d-4a9e-84a2-ec5f9dedfe6b" />
